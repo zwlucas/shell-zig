@@ -134,3 +134,45 @@ pub fn executeCommand(
     try stdout.print("{s}: command not found\n", .{cmd_name});
     return .continue_loop;
 }
+
+pub fn executePipeline(
+    allocator: std.mem.Allocator,
+    stdout: anytype,
+    left_cmd: []const u8,
+    right_cmd: []const u8,
+) !builtins.CommandResult {
+    const left_parsed = parser.parseCommand(left_cmd);
+    const right_parsed = parser.parseCommand(right_cmd);
+
+    if (left_parsed.name.len == 0) {
+        try stdout.print("{s}: command not found\n", .{left_cmd});
+        return .continue_loop;
+    }
+    if (right_parsed.name.len == 0) {
+        try stdout.print("{s}: command not found\n", .{right_cmd});
+        return .continue_loop;
+    }
+
+    const left_path = try path.findInPath(allocator, left_parsed.name);
+    defer if (left_path) |p| allocator.free(p);
+    if (left_path == null) {
+        try stdout.print("{s}: command not found\n", .{left_parsed.name});
+        return .continue_loop;
+    }
+
+    const right_path = try path.findInPath(allocator, right_parsed.name);
+    defer if (right_path) |p| allocator.free(p);
+    if (right_path == null) {
+        try stdout.print("{s}: command not found\n", .{right_parsed.name});
+        return .continue_loop;
+    }
+
+    const left_argv = try parser.parseArgs(allocator, left_parsed.name, left_parsed.args);
+    defer allocator.free(left_argv);
+
+    const right_argv = try parser.parseArgs(allocator, right_parsed.name, right_parsed.args);
+    defer allocator.free(right_argv);
+
+    try executor.runExternalPipeline(allocator, left_path.?, left_argv, right_path.?, right_argv);
+    return .continue_loop;
+}

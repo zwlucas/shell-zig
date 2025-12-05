@@ -294,15 +294,30 @@ pub fn main() !void {
         if (command) |cmd| {
             defer allocator.free(cmd);
             try stdout.writeAll("\n");
-
-            const parsed = parser.parseCommand(cmd);
-
             var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
             const stdout_iface = &stdout_writer.interface;
 
-            const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error);
+            if (std.mem.indexOfScalar(u8, cmd, '|')) |pipe_pos| {
+                var left = cmd[0..pipe_pos];
+                var right = if (pipe_pos + 1 < cmd.len) cmd[pipe_pos + 1 ..] else cmd[pipe_pos..pipe_pos];
+                while (left.len > 0 and left[0] == ' ') left = left[1..];
+                while (left.len > 0 and left[left.len - 1] == ' ') left = left[0 .. left.len - 1];
+                while (right.len > 0 and right[0] == ' ') right = right[1..];
+                while (right.len > 0 and right[right.len - 1] == ' ') right = right[0 .. right.len - 1];
 
-            if (result == .exit_shell) break;
+                if (left.len == 0 or right.len == 0) {
+                    try stdout.writeAll("pipe: command not found\n");
+                } else {
+                    const result = try shell.executePipeline(allocator, stdout_iface, left, right);
+                    if (result == .exit_shell) break;
+                }
+            } else {
+                const parsed = parser.parseCommand(cmd);
+
+                const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error);
+
+                if (result == .exit_shell) break;
+            }
         } else {
             break;
         }
