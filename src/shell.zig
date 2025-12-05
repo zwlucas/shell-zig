@@ -10,11 +10,18 @@ pub fn executeCommand(
     cmd_name: []const u8,
     args: ?[]const u8,
     output_redirect: ?[]const u8,
+    error_redirect: ?[]const u8,
 ) !builtins.CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "echo")) {
-        if (output_redirect) |file| {
+        if (error_redirect) |file| {
+            const fd = try std.fs.cwd().createFile(file, .{});
+            fd.close();
+        }
+
+        if (output_redirect != null) {
+            const file = output_redirect.?;
             const fd = try std.fs.cwd().createFile(file, .{});
             defer fd.close();
 
@@ -90,8 +97,8 @@ pub fn executeCommand(
         const argv = try parser.parseArgs(allocator, cmd_name, args);
         defer allocator.free(argv);
 
-        if (output_redirect) |file| {
-            try executor.runExternalProgramWithRedirect(allocator, program_path, argv, file);
+        if (output_redirect != null or error_redirect != null) {
+            try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect);
         } else {
             try executor.runExternalProgram(allocator, program_path, argv);
         }

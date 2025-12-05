@@ -20,7 +20,7 @@ pub fn main() !void {
         const command = try stdin.takeDelimiter('\n');
         if (command) |cmd| {
             const parsed = parser.parseCommand(cmd);
-            const result = try shell.executeCommand(allocator, stdout, parsed.name, parsed.args, parsed.output_redirect);
+            const result = try shell.executeCommand(allocator, stdout, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect);
 
             if (result == .exit_shell) break;
         } else {
