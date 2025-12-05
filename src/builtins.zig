@@ -21,7 +21,33 @@ pub fn executeExit() CommandResult {
 
 pub fn executeEcho(stdout: anytype, args: ?[]const u8) !void {
     if (args) |a| {
-        try stdout.print("{s}\n", .{a});
+        var i: usize = 0;
+        var in_quote = false;
+        var quote_char: u8 = 0;
+        var unquoted = std.ArrayList(u8){};
+        defer unquoted.deinit(std.heap.page_allocator);
+        var last_was_space = false;
+
+        while (i < a.len) : (i += 1) {
+            if (!in_quote and (a[i] == '\'' or a[i] == '"')) {
+                in_quote = true;
+                quote_char = a[i];
+                last_was_space = false;
+            } else if (in_quote and a[i] == quote_char) {
+                in_quote = false;
+                last_was_space = false;
+            } else if (!in_quote and a[i] == ' ') {
+                if (!last_was_space) {
+                    _ = unquoted.append(std.heap.page_allocator, ' ') catch {};
+                    last_was_space = true;
+                }
+            } else {
+                _ = unquoted.append(std.heap.page_allocator, a[i]) catch {};
+                last_was_space = false;
+            }
+        }
+
+        try stdout.print("{s}\n", .{unquoted.items});
     } else {
         try stdout.print("\n", .{});
     }

@@ -15,15 +15,30 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
 
 pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {
     var args_list = std.ArrayList([]const u8){};
-    try args_list.ensureTotalCapacity(allocator, 8);
+    try args_list.ensureTotalCapacity(allocator, 16);
     errdefer args_list.deinit(allocator);
 
     try args_list.append(allocator, cmd_name);
 
     if (args_str) |args| {
-        var it = std.mem.tokenizeScalar(u8, args, ' ');
-        while (it.next()) |arg| {
-            try args_list.append(allocator, arg);
+        var i: usize = 0;
+        while (i < args.len) {
+            if (args[i] == '\'' or args[i] == '"') {
+                const quote = args[i];
+                i += 1;
+                const start = i;
+                while (i < args.len and args[i] != quote) : (i += 1) {}
+                if (i <= args.len) {
+                    try args_list.append(allocator, args[start..i]);
+                    i += 1;
+                }
+            } else if (args[i] != ' ') {
+                const start = i;
+                while (i < args.len and args[i] != ' ' and args[i] != '\'' and args[i] != '"') : (i += 1) {}
+                try args_list.append(allocator, args[start..i]);
+            } else {
+                i += 1;
+            }
         }
     }
 
