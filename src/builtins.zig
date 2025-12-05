@@ -122,6 +122,15 @@ pub fn executeHistory(stdout: anytype, history_list: []const []const u8, args: ?
     if (args) |a| {
         const trimmed = std.mem.trim(u8, a, " ");
         if (trimmed.len > 0) {
+            // Check if it's a -r flag for reading from file
+            if (std.mem.startsWith(u8, trimmed, "-r ")) {
+                const file_path = std.mem.trim(u8, trimmed[3..], " ");
+                if (file_path.len == 0) {
+                    try stdout.print("history: -r requires a file path\n", .{});
+                }
+                return;
+            }
+
             limit = std.fmt.parseInt(usize, trimmed, 10) catch {
                 try stdout.print("history: invalid argument\n", .{});
                 return;
@@ -132,5 +141,30 @@ pub fn executeHistory(stdout: anytype, history_list: []const []const u8, args: ?
     const start = if (limit < history_list.len) history_list.len - limit else 0;
     for (history_list[start..], start + 1..) |cmd, idx| {
         try stdout.print("    {d}  {s}\n", .{ idx, cmd });
+    }
+}
+
+pub fn executeHistoryRead(allocator: std.mem.Allocator, stdout: anytype, file_path: []const u8, history_list: *std.ArrayList([]const u8)) !void {
+    const file = std.fs.cwd().openFile(file_path, .{}) catch {
+        try stdout.print("history: cannot open {s}: error\n", .{file_path});
+        return;
+    };
+    defer file.close();
+
+    const file_size = try file.getEndPos();
+    const buffer = try allocator.alloc(u8, file_size);
+    defer allocator.free(buffer);
+
+    const bytes_read = try file.readAll(buffer);
+    if (bytes_read == 0) return;
+
+    // Parse lines from file
+    var line_iter = std.mem.splitScalar(u8, buffer[0..bytes_read], '\n');
+    while (line_iter.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \r");
+        if (trimmed.len > 0) {
+            const line_copy = try allocator.dupe(u8, trimmed);
+            try history_list.append(allocator, line_copy);
+        }
     }
 }

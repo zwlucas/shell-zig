@@ -19,12 +19,24 @@ pub fn executeCommand(
     error_redirect: ?[]const u8,
     append_output: ?[]const u8,
     append_error: ?[]const u8,
-    history_list: []const []const u8,
+    history: *std.ArrayList([]const u8),
 ) !builtins.CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "history")) {
-        try builtins.executeHistory(stdout, history_list, args);
+        // Check if args contain -r flag for reading from file
+        if (args) |a| {
+            const trimmed = std.mem.trim(u8, a, " ");
+            if (std.mem.startsWith(u8, trimmed, "-r ")) {
+                const file_path = std.mem.trim(u8, trimmed[3..], " ");
+                if (file_path.len > 0) {
+                    try builtins.executeHistoryRead(allocator, stdout, file_path, history);
+                }
+                return .continue_loop;
+            }
+        }
+
+        try builtins.executeHistory(stdout, history.items, args);
         return .continue_loop;
     }
 

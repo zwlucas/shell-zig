@@ -406,7 +406,7 @@ pub fn main() !void {
 
                 if (segments.items.len == 1) {
                     const parsed = parser.parseCommand(cmd);
-                    const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, history.items);
+                    const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, &history);
                     if (result == .exit_shell) break;
                 } else {
                     const result = try shell.executePipeline(allocator, stdout_iface, segments.items);
@@ -415,7 +415,7 @@ pub fn main() !void {
             } else {
                 const parsed = parser.parseCommand(cmd);
 
-                const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, history.items);
+                const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, &history);
 
                 if (result == .exit_shell) break;
             }
