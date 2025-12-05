@@ -159,7 +159,7 @@ fn disableRawMode(fd: std.posix.fd_t, original: std.posix.termios) !void {
     try std.posix.tcsetattr(fd, .FLUSH, original);
 }
 
-fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
+fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8)) !?[]const u8 {
     const stdin = std.fs.File.stdin();
     const stdout = std.fs.File.stdout();
 
@@ -175,6 +175,7 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
     var byte: [1]u8 = undefined;
     var last_tab_partial: ?[]const u8 = null;
     var last_was_tab = false;
+    var history_index: ?usize = null; // Track which history entry is displayed
 
     while (true) {
         const bytes_read = try stdin.read(&byte);
@@ -185,6 +186,75 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
         if (c == '\n' or c == '\r') {
             if (last_tab_partial) |p| allocator.free(p);
             return try buffer.toOwnedSlice(allocator);
+        } else if (c == 27 and is_tty) {
+            // Escape sequence - check for arrow keys
+            var seq: [2]u8 = undefined;
+            var seq_len: usize = 0;
+
+            // Try to read the next two bytes
+            if (try stdin.read(seq[0..1]) > 0) {
+                seq_len = 1;
+                if (seq[0] == '[') {
+                    if (try stdin.read(seq[1..2]) > 0) {
+                        seq_len = 2;
+                        if (seq[1] == 'A') {
+                            // UP arrow - recall previous command
+                            const new_index = if (history_index) |idx|
+                                if (idx > 0) idx - 1 else idx
+                            else if (history.items.len > 0)
+                                history.items.len - 1
+                            else
+                                null;
+
+                            if (new_index) |idx| {
+                                history_index = idx;
+
+                                // Clear current line
+                                while (buffer.items.len > 0) {
+                                    _ = buffer.pop();
+                                    try stdout.writeAll("\x08 \x08");
+                                }
+
+                                // Display historical command
+                                const cmd = history.items[idx];
+                                try buffer.appendSlice(allocator, cmd);
+                                try stdout.writeAll(cmd);
+
+                                last_tab_partial = null;
+                                last_was_tab = false;
+                            }
+                        } else if (seq[1] == 'B') {
+                            // DOWN arrow - recall next command or clear
+                            if (history_index) |idx| {
+                                if (idx + 1 < history.items.len) {
+                                    history_index = idx + 1;
+
+                                    // Clear current line
+                                    while (buffer.items.len > 0) {
+                                        _ = buffer.pop();
+                                        try stdout.writeAll("\x08 \x08");
+                                    }
+
+                                    // Display next historical command
+                                    const cmd = history.items[idx + 1];
+                                    try buffer.appendSlice(allocator, cmd);
+                                    try stdout.writeAll(cmd);
+                                } else {
+                                    // Clear buffer and history_index
+                                    while (buffer.items.len > 0) {
+                                        _ = buffer.pop();
+                                        try stdout.writeAll("\x08 \x08");
+                                    }
+                                    history_index = null;
+                                }
+
+                                last_tab_partial = null;
+                                last_was_tab = false;
+                            }
+                        }
+                    }
+                }
+            }
         } else if (c == '\t' and is_tty) {
             const partial = buffer.items;
             if (partial.len > 0 and std.mem.indexOf(u8, partial, " ") == null) {
@@ -296,7 +366,7 @@ pub fn main() !void {
     while (true) {
         try stdout.writeAll("$ ");
 
-        const command = try readCommand(allocator);
+        const command = try readCommand(allocator, history);
         if (command) |cmd| {
             defer allocator.free(cmd);
             try stdout.writeAll("\n");
