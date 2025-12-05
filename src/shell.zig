@@ -20,11 +20,12 @@ pub fn executeCommand(
     append_output: ?[]const u8,
     append_error: ?[]const u8,
     history: *std.ArrayList([]const u8),
+    last_written_index: *usize,
 ) !builtins.CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "history")) {
-        // Check if args contain -r or -w flag for reading/writing file
+        // Check if args contain -r, -w, or -a flag for reading/writing/appending file
         if (args) |a| {
             const trimmed = std.mem.trim(u8, a, " ");
             if (std.mem.startsWith(u8, trimmed, "-r ")) {
@@ -37,6 +38,12 @@ pub fn executeCommand(
                 const file_path = std.mem.trim(u8, trimmed[3..], " ");
                 if (file_path.len > 0) {
                     try builtins.executeHistoryWrite(stdout, file_path, history.items);
+                }
+                return .continue_loop;
+            } else if (std.mem.startsWith(u8, trimmed, "-a ")) {
+                const file_path = std.mem.trim(u8, trimmed[3..], " ");
+                if (file_path.len > 0) {
+                    try builtins.executeHistoryAppend(stdout, file_path, history.items, last_written_index);
                 }
                 return .continue_loop;
             }

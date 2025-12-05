@@ -181,3 +181,41 @@ pub fn executeHistoryWrite(stdout: anytype, file_path: []const u8, history_list:
         try file.writeAll("\n");
     }
 }
+
+pub fn executeHistoryAppend(stdout: anytype, file_path: []const u8, history_list: []const []const u8, last_written_index: *usize) !void {
+    // Open file in append mode, or create if doesn't exist
+    const file = std.fs.cwd().openFile(file_path, .{ .mode = .write_only }) catch |err| {
+        if (err == error.FileNotFound) {
+            // Create the file if it doesn't exist
+            const new_file = std.fs.cwd().createFile(file_path, .{}) catch {
+                try stdout.print("history: cannot write to {s}: error\n", .{file_path});
+                return;
+            };
+            defer new_file.close();
+
+            // Write all commands to new file
+            for (history_list) |cmd| {
+                try new_file.writeAll(cmd);
+                try new_file.writeAll("\n");
+            }
+            last_written_index.* = history_list.len;
+            return;
+        } else {
+            try stdout.print("history: cannot open {s}: error\n", .{file_path});
+            return;
+        }
+    };
+    defer file.close();
+
+    // Seek to end to append
+    try file.seekFromEnd(0);
+
+    // Append only new commands (commands after last_written_index)
+    const start_idx = last_written_index.*;
+    for (history_list[start_idx..]) |cmd| {
+        try file.writeAll(cmd);
+        try file.writeAll("\n");
+    }
+
+    last_written_index.* = history_list.len;
+}
