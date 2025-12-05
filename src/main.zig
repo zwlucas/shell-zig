@@ -456,4 +456,17 @@ pub fn main() !void {
             break;
         }
     }
+
+    // Save history to HISTFILE on exit
+    if (std.posix.getenv("HISTFILE")) |histfile_path| {
+        const file = std.fs.cwd().createFile(histfile_path, .{}) catch null;
+        if (file) |f| {
+            defer f.close();
+
+            for (history.items) |cmd| {
+                _ = f.writeAll(cmd) catch {};
+                _ = f.writeAll("\n") catch {};
+            }
+        }
+    }
 }
