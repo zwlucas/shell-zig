@@ -5,6 +5,23 @@ const builtins = @import("builtins.zig");
 
 const BUILTINS = [_][]const u8{ "echo", "exit" };
 
+fn longestCommonPrefix(strings: []const []const u8) []const u8 {
+    if (strings.len == 0) return "";
+    var min_len: usize = strings[0].len;
+    for (strings[1..]) |s| {
+        if (s.len < min_len) min_len = s.len;
+    }
+
+    var i: usize = 0;
+    while (i < min_len) : (i += 1) {
+        const c = strings[0][i];
+        for (strings[1..]) |s| {
+            if (s[i] != c) return strings[0][0..i];
+        }
+    }
+    return strings[0][0..min_len];
+}
+
 fn findAllMatches(allocator: std.mem.Allocator, partial: []const u8) !std.ArrayList([]const u8) {
     var matches = std.ArrayList([]const u8){};
 
@@ -171,16 +188,44 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
         } else if (c == '\t' and is_tty) {
             const partial = buffer.items;
             if (partial.len > 0 and std.mem.indexOf(u8, partial, " ") == null) {
+                var matches = try findAllMatches(allocator, partial);
+                defer {
+                    for (matches.items) |m| allocator.free(m);
+                    matches.deinit(allocator);
+                }
+
                 const is_double_tab = last_was_tab and last_tab_partial != null and std.mem.eql(u8, last_tab_partial.?, partial);
 
-                if (is_double_tab) {
-                    var matches = try findAllMatches(allocator, partial);
-                    defer {
-                        for (matches.items) |match| allocator.free(match);
-                        matches.deinit(allocator);
+                if (matches.items.len == 0) {
+                    try stdout.writeAll("\x07");
+                    last_was_tab = true;
+                    if (last_tab_partial) |p| allocator.free(p);
+                    last_tab_partial = try allocator.dupe(u8, partial);
+                } else if (matches.items.len == 1) {
+                    const completion = matches.items[0];
+                    if (completion.len > partial.len) {
+                        const remaining = completion[partial.len..];
+                        try stdout.writeAll(remaining);
+                        try buffer.appendSlice(allocator, remaining);
                     }
+                    // Always add trailing space when exactly one match remains
+                    try stdout.writeAll(" ");
+                    try buffer.append(allocator, ' ');
 
-                    if (matches.items.len > 1) {
+                    last_was_tab = false;
+                    if (last_tab_partial) |p| allocator.free(p);
+                    last_tab_partial = null;
+                } else {
+                    const lcp = longestCommonPrefix(matches.items);
+                    if (lcp.len > partial.len) {
+                        const remaining = lcp[partial.len..];
+                        try stdout.writeAll(remaining);
+                        try buffer.appendSlice(allocator, remaining);
+                        // No trailing space because multiple matches remain
+                        last_was_tab = false;
+                        if (last_tab_partial) |p| allocator.free(p);
+                        last_tab_partial = null;
+                    } else if (is_double_tab) {
                         std.mem.sort([]const u8, matches.items, {}, struct {
                             fn lessThan(_: void, a: []const u8, b: []const u8) bool {
                                 return std.mem.order(u8, a, b) == .lt;
@@ -196,26 +241,13 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
                         }
                         try stdout.writeAll("\n$ ");
                         try stdout.writeAll(partial);
-                    }
 
-                    last_was_tab = false;
-                    if (last_tab_partial) |p| {
-                        allocator.free(p);
-                        last_tab_partial = null;
-                    }
-                } else {
-                    if (tryComplete(allocator, partial)) |completion| {
-                        defer allocator.free(completion);
-                        const remaining = completion[partial.len..];
-                        try stdout.writeAll(remaining);
-                        try stdout.writeAll(" ");
-                        try buffer.appendSlice(allocator, remaining);
-                        try buffer.append(allocator, ' ');
                         last_was_tab = false;
-                        if (last_tab_partial) |p| allocator.free(p);
-                        last_tab_partial = null;
+                        if (last_tab_partial) |p| {
+                            allocator.free(p);
+                            last_tab_partial = null;
+                        }
                     } else {
-                        // No unique completion - ring bell and remember this for double-tab
                         try stdout.writeAll("\x07");
                         last_was_tab = true;
                         if (last_tab_partial) |p| allocator.free(p);
