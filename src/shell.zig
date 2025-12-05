@@ -153,26 +153,41 @@ pub fn executePipeline(
         return .continue_loop;
     }
 
-    const left_path = try path.findInPath(allocator, left_parsed.name);
+    const left_is_builtin = builtins.isBuiltin(left_parsed.name);
+    const right_is_builtin = builtins.isBuiltin(right_parsed.name);
+
+    const left_path = if (left_is_builtin) null else try path.findInPath(allocator, left_parsed.name);
     defer if (left_path) |p| allocator.free(p);
-    if (left_path == null) {
+    if (!left_is_builtin and left_path == null) {
         try stdout.print("{s}: command not found\n", .{left_parsed.name});
         return .continue_loop;
     }
 
-    const right_path = try path.findInPath(allocator, right_parsed.name);
+    const right_path = if (right_is_builtin) null else try path.findInPath(allocator, right_parsed.name);
     defer if (right_path) |p| allocator.free(p);
-    if (right_path == null) {
+    if (!right_is_builtin and right_path == null) {
         try stdout.print("{s}: command not found\n", .{right_parsed.name});
         return .continue_loop;
     }
 
-    const left_argv = try parser.parseArgs(allocator, left_parsed.name, left_parsed.args);
-    defer allocator.free(left_argv);
+    const left_argv = if (left_is_builtin) null else try parser.parseArgs(allocator, left_parsed.name, left_parsed.args);
+    defer if (left_argv) |argv| allocator.free(argv);
 
-    const right_argv = try parser.parseArgs(allocator, right_parsed.name, right_parsed.args);
-    defer allocator.free(right_argv);
+    const right_argv = if (right_is_builtin) null else try parser.parseArgs(allocator, right_parsed.name, right_parsed.args);
+    defer if (right_argv) |argv| allocator.free(argv);
 
-    try executor.runExternalPipeline(allocator, left_path.?, left_argv, right_path.?, right_argv);
+    try executor.runPipeline(
+        allocator,
+        left_path,
+        left_is_builtin,
+        left_parsed.name,
+        left_parsed.args,
+        left_argv,
+        right_path,
+        right_is_builtin,
+        right_parsed.name,
+        right_parsed.args,
+        right_argv,
+    );
     return .continue_loop;
 }
