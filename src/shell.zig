@@ -17,6 +17,11 @@ pub fn executeCommand(
         return .continue_loop;
     }
 
+    if (std.mem.eql(u8, cmd_name, "pwd")) {
+        try builtins.executePwd(allocator, stdout);
+        return .continue_loop;
+    }
+
     if (std.mem.eql(u8, cmd_name, "type")) {
         try builtins.executeType(allocator, stdout, args);
         return .continue_loop;

@@ -1,7 +1,7 @@
 const std = @import("std");
 const path = @import("path.zig");
 
-const BUILTINS = [_][]const u8{ "exit", "echo", "type" };
+const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd" };
 
 pub const CommandResult = enum {
     continue_loop,
@@ -25,6 +25,12 @@ pub fn executeEcho(stdout: anytype, args: ?[]const u8) !void {
     } else {
         try stdout.print("\n", .{});
     }
+}
+
+pub fn executePwd(allocator: std.mem.Allocator, stdout: anytype) !void {
+    const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(cwd);
+    try stdout.print("{s}\n", .{cwd});
 }
 
 pub fn executeType(allocator: std.mem.Allocator, stdout: anytype, args: ?[]const u8) !void {
