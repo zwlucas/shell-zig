@@ -5,6 +5,7 @@ pub const ParsedCommand = struct {
     args: ?[]const u8,
     output_redirect: ?[]const u8,
     error_redirect: ?[]const u8,
+    append_output: ?[]const u8,
 };
 
 pub fn parseCommand(input: []const u8) ParsedCommand {
@@ -15,7 +16,7 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
     while (i < input.len and input[i] == ' ') : (i += 1) {}
 
     if (i >= input.len) {
-        return .{ .name = "", .args = null, .output_redirect = null, .error_redirect = null };
+        return .{ .name = "", .args = null, .output_redirect = null, .error_redirect = null, .append_output = null };
     }
 
     if (input[i] == '\'' or input[i] == '"') {
@@ -40,10 +41,17 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
 
     var redirect_pos: ?usize = null;
     var error_redirect_pos: ?usize = null;
+    var append_pos: ?usize = null;
     var j = i;
     while (j < input.len) : (j += 1) {
         if (j + 1 < input.len and input[j] == '2' and input[j + 1] == '>') {
             error_redirect_pos = j;
+            j += 1;
+        } else if (j + 1 < input.len and input[j] == '1' and j + 1 < input.len and input[j + 1] == '>' and j + 2 < input.len and input[j + 2] == '>') {
+            append_pos = j;
+            j += 2;
+        } else if (j + 1 < input.len and input[j] == '>' and input[j + 1] == '>') {
+            append_pos = j;
             j += 1;
         } else if (input[j] == '1' and j + 1 < input.len and input[j + 1] == '>') {
             redirect_pos = j;
@@ -57,12 +65,16 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
     var args: ?[]const u8 = null;
     var output_redirect: ?[]const u8 = null;
     var error_redirect: ?[]const u8 = null;
+    var append_output: ?[]const u8 = null;
 
     var args_end = input.len;
     if (redirect_pos) |pos| {
         if (pos < args_end) args_end = pos;
     }
     if (error_redirect_pos) |pos| {
+        if (pos < args_end) args_end = pos;
+    }
+    if (append_pos) |pos| {
         if (pos < args_end) args_end = pos;
     }
 
@@ -105,7 +117,26 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
         }
     }
 
-    return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect, .error_redirect = error_redirect };
+    if (append_pos) |pos| {
+        var k = pos;
+        if (input[k] == '1') k += 1;
+        if (k < input.len and input[k] == '>') k += 1;
+        if (k < input.len and input[k] == '>') k += 1;
+
+        while (k < input.len and input[k] == ' ') : (k += 1) {}
+
+        if (k < input.len) {
+            var redir_buf = std.ArrayList(u8){};
+            defer redir_buf.deinit(std.heap.page_allocator);
+
+            while (k < input.len and input[k] != ' ') : (k += 1) {
+                _ = redir_buf.append(std.heap.page_allocator, input[k]) catch {};
+            }
+            append_output = redir_buf.toOwnedSlice(std.heap.page_allocator) catch null;
+        }
+    }
+
+    return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect, .error_redirect = error_redirect, .append_output = append_output };
 }
 
 pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {

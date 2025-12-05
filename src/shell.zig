@@ -11,6 +11,7 @@ pub fn executeCommand(
     args: ?[]const u8,
     output_redirect: ?[]const u8,
     error_redirect: ?[]const u8,
+    append_output: ?[]const u8,
 ) !builtins.CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
@@ -20,10 +21,23 @@ pub fn executeCommand(
             fd.close();
         }
 
-        if (output_redirect != null) {
-            const file = output_redirect.?;
-            const fd = try std.fs.cwd().createFile(file, .{});
+        if (output_redirect != null or append_output != null) {
+            const file = if (output_redirect) |f| f else append_output.?;
+            const is_append = append_output != null;
+
+            const fd = if (is_append) blk: {
+                break :blk std.fs.cwd().openFile(file, .{ .mode = .write_only }) catch |err| {
+                    if (err == error.FileNotFound) {
+                        break :blk try std.fs.cwd().createFile(file, .{});
+                    }
+                    return err;
+                };
+            } else try std.fs.cwd().createFile(file, .{});
             defer fd.close();
+
+            if (is_append) {
+                try fd.seekFromEnd(0);
+            }
 
             if (args) |a| {
                 var i: usize = 0;
@@ -97,8 +111,8 @@ pub fn executeCommand(
         const argv = try parser.parseArgs(allocator, cmd_name, args);
         defer allocator.free(argv);
 
-        if (output_redirect != null or error_redirect != null) {
-            try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect);
+        if (output_redirect != null or error_redirect != null or append_output != null) {
+            try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output);
         } else {
             try executor.runExternalProgram(allocator, program_path, argv);
         }
