@@ -5,19 +5,74 @@ const builtins = @import("builtins.zig");
 
 const BUILTINS = [_][]const u8{ "echo", "exit" };
 
-fn tryComplete(partial: []const u8) ?[]const u8 {
+fn tryComplete(allocator: std.mem.Allocator, partial: []const u8) ?[]const u8 {
     var matches: usize = 0;
-    var match: []const u8 = "";
+    var match: ?[]const u8 = null;
+    var match_is_builtin = false;
 
     for (BUILTINS) |builtin| {
         if (std.mem.startsWith(u8, builtin, partial)) {
             matches += 1;
-            match = builtin;
-            if (matches > 1) return null;
+            if (matches == 1) {
+                match = builtin;
+                match_is_builtin = true;
+            }
+            if (matches > 1) {
+                if (match != null and !match_is_builtin) {
+                    allocator.free(match.?);
+                }
+                return null;
+            }
         }
     }
 
-    if (matches == 1) return match;
+    const path_env = std.posix.getenv("PATH") orelse {
+        if (matches == 1 and match != null) {
+            return allocator.dupe(u8, match.?) catch null;
+        }
+        return null;
+    };
+
+    var path_iter = std.mem.splitScalar(u8, path_env, ':');
+    while (path_iter.next()) |dir_path| {
+        if (dir_path.len == 0) continue;
+
+        var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch continue;
+        defer dir.close();
+
+        var iter = dir.iterate();
+        while (iter.next() catch continue) |entry| {
+            if (entry.kind == .file or entry.kind == .sym_link) {
+                if (std.mem.startsWith(u8, entry.name, partial)) {
+                    const stat = dir.statFile(entry.name) catch continue;
+                    if (stat.mode & 0o111 != 0) {
+                        if (match != null and match_is_builtin and std.mem.eql(u8, match.?, entry.name)) {
+                            continue;
+                        }
+
+                        matches += 1;
+                        if (matches == 1) {
+                            match = allocator.dupe(u8, entry.name) catch continue;
+                            match_is_builtin = false;
+                        } else {
+                            if (match != null and !match_is_builtin) {
+                                allocator.free(match.?);
+                            }
+                            return null;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (matches == 1 and match != null) {
+        if (match_is_builtin) {
+            return allocator.dupe(u8, match.?) catch null;
+        } else {
+            return match.?;
+        }
+    }
     return null;
 }
 
@@ -25,11 +80,9 @@ fn enableRawMode(fd: std.posix.fd_t) !std.posix.termios {
     const original = try std.posix.tcgetattr(fd);
     var raw = original;
 
-    // Disable canonical mode and echo
     raw.lflag.ICANON = false;
     raw.lflag.ECHO = false;
 
-    // Set minimum bytes and timeout for read
     raw.cc[@intFromEnum(std.posix.V.MIN)] = 1;
     raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
 
@@ -47,7 +100,6 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
 
     const stdin_fd = stdin.handle;
 
-    // Only use raw mode if stdin is a terminal
     const is_tty = std.posix.isatty(stdin_fd);
     const original_termios = if (is_tty) try enableRawMode(stdin_fd) else null;
     defer if (original_termios) |orig| disableRawMode(stdin_fd, orig) catch {};
@@ -68,14 +120,14 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
         } else if (c == '\t' and is_tty) {
             const partial = buffer.items;
             if (partial.len > 0 and std.mem.indexOf(u8, partial, " ") == null) {
-                if (tryComplete(partial)) |completion| {
+                if (tryComplete(allocator, partial)) |completion| {
+                    defer allocator.free(completion);
                     const remaining = completion[partial.len..];
                     try stdout.writeAll(remaining);
                     try stdout.writeAll(" ");
                     try buffer.appendSlice(allocator, remaining);
                     try buffer.append(allocator, ' ');
                 } else {
-                    // No completion found, ring the bell
                     try stdout.writeAll("\x07");
                 }
             }
@@ -90,7 +142,6 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
                 try stdout.writeAll(&[_]u8{c});
             }
         } else if (c == '\t' and !is_tty) {
-            // When not a TTY, tab is part of the input (for testing)
             try buffer.append(allocator, c);
         }
     }
