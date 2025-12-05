@@ -134,81 +134,82 @@ fn runBuiltinInChild(
 
     std.posix.exit(0);
 }
-
 pub fn runPipeline(
     allocator: std.mem.Allocator,
-    left_path: ?[]const u8,
-    left_builtin: bool,
-    left_name: []const u8,
-    left_args: ?[]const u8,
-    left_argv: ?[]const []const u8,
-    right_path: ?[]const u8,
-    right_builtin: bool,
-    right_name: []const u8,
-    right_args: ?[]const u8,
-    right_argv: ?[]const []const u8,
+    stages: []const Stage,
 ) !void {
-    const fds = try std.posix.pipe();
-
-    const pid1 = try std.posix.fork();
-    if (pid1 == 0) {
-        std.posix.close(fds[0]);
-        try std.posix.dup2(fds[1], 1);
-        std.posix.close(fds[1]);
-
-        if (left_builtin) {
-            runBuiltinInChild(allocator, left_name, left_args, 0, 1);
+    if (stages.len == 0) return;
+    if (stages.len == 1) {
+        const s = stages[0];
+        if (s.is_builtin) {
+            runBuiltinInChild(allocator, s.name, s.args, 0, 1);
         } else {
-            const argv1_z = try allocator.allocSentinel(?[*:0]const u8, left_argv.?.len, @as(?[*:0]const u8, null));
-            defer allocator.free(argv1_z);
-            for (left_argv.?, 0..) |arg, i| {
-                argv1_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
-            }
+            const argv_z = try allocator.allocSentinel(?[*:0]const u8, s.argv.?.len, @as(?[*:0]const u8, null));
+            defer allocator.free(argv_z);
+            for (s.argv.?, 0..) |arg, i| argv_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
             defer {
-                for (argv1_z[0..left_argv.?.len]) |arg_ptr| {
-                    if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
-                }
+                for (argv_z[0..s.argv.?.len]) |arg_ptr| if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
             }
-            const program1_path_z = try allocator.dupeZ(u8, left_path.?);
-            defer allocator.free(program1_path_z);
-            _ = std.posix.execveZ(program1_path_z, argv1_z, std.c.environ) catch {
-                std.posix.exit(1);
-            };
-            unreachable;
+            const path_z = try allocator.dupeZ(u8, s.path.?);
+            defer allocator.free(path_z);
+            _ = std.posix.execveZ(path_z, argv_z, std.c.environ) catch std.posix.exit(1);
         }
     }
 
-    const pid2 = try std.posix.fork();
-    if (pid2 == 0) {
-        std.posix.close(fds[1]);
-        try std.posix.dup2(fds[0], 0);
-        std.posix.close(fds[0]);
+    const pipes = try allocator.alloc([2]std.posix.fd_t, stages.len - 1);
+    defer allocator.free(pipes);
+    for (pipes) |*p| p.* = try std.posix.pipe();
 
-        if (right_builtin) {
-            runBuiltinInChild(allocator, right_name, right_args, 0, 1);
-        } else {
-            const argv2_z = try allocator.allocSentinel(?[*:0]const u8, right_argv.?.len, @as(?[*:0]const u8, null));
-            defer allocator.free(argv2_z);
-            for (right_argv.?, 0..) |arg, i| {
-                argv2_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
+    var pids = try allocator.alloc(std.posix.pid_t, stages.len);
+    defer allocator.free(pids);
+
+    for (stages, 0..) |s, idx| {
+        const pid = try std.posix.fork();
+        if (pid == 0) {
+            if (idx > 0) {
+                try std.posix.dup2(pipes[idx - 1][0], 0);
             }
-            defer {
-                for (argv2_z[0..right_argv.?.len]) |arg_ptr| {
-                    if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
+            if (idx + 1 < stages.len) {
+                try std.posix.dup2(pipes[idx][1], 1);
+            }
+
+            for (pipes) |p| {
+                std.posix.close(p[0]);
+                std.posix.close(p[1]);
+            }
+
+            if (s.is_builtin) {
+                runBuiltinInChild(allocator, s.name, s.args, 0, 1);
+            } else {
+                const argv_z = try allocator.allocSentinel(?[*:0]const u8, s.argv.?.len, @as(?[*:0]const u8, null));
+                defer allocator.free(argv_z);
+                for (s.argv.?, 0..) |arg, i| argv_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
+                defer {
+                    for (argv_z[0..s.argv.?.len]) |arg_ptr| if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
                 }
+                const path_z = try allocator.dupeZ(u8, s.path.?);
+                defer allocator.free(path_z);
+                _ = std.posix.execveZ(path_z, argv_z, std.c.environ) catch std.posix.exit(1);
             }
-            const program2_path_z = try allocator.dupeZ(u8, right_path.?);
-            defer allocator.free(program2_path_z);
-            _ = std.posix.execveZ(program2_path_z, argv2_z, std.c.environ) catch {
-                std.posix.exit(1);
-            };
             unreachable;
         }
+        pids[idx] = pid;
     }
 
-    std.posix.close(fds[0]);
-    std.posix.close(fds[1]);
+    for (pipes) |p| {
+        std.posix.close(p[0]);
+        std.posix.close(p[1]);
+    }
 
-    _ = std.posix.waitpid(pid1, 0);
-    _ = std.posix.waitpid(pid2, 0);
+    for (pids) |pid| {
+        _ = std.posix.waitpid(pid, 0);
+    }
 }
+
+pub const Stage = struct {
+    is_builtin: bool,
+    name: []const u8,
+    args: ?[]const u8,
+    path: ?[]const u8,
+    argv: ?[]const []const u8,
+};

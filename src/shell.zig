@@ -4,6 +4,12 @@ const builtins = @import("builtins.zig");
 const path = @import("path.zig");
 const executor = @import("executor.zig");
 
+fn freeArgv(allocator: std.mem.Allocator, argv: []const []const u8) void {
+    // argv[0] is cmd_name (not allocated), argv[1..] are allocated by parseArgs
+    for (argv[1..]) |arg| allocator.free(arg);
+    allocator.free(argv);
+}
+
 pub fn executeCommand(
     allocator: std.mem.Allocator,
     stdout: anytype,
@@ -121,7 +127,10 @@ pub fn executeCommand(
         defer allocator.free(program_path);
 
         const argv = try parser.parseArgs(allocator, cmd_name, args);
-        defer allocator.free(argv);
+        defer {
+            for (argv[1..]) |arg| allocator.free(arg);
+            allocator.free(argv);
+        }
 
         if (output_redirect != null or error_redirect != null or append_output != null or append_error != null) {
             try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output, append_error);
@@ -138,56 +147,57 @@ pub fn executeCommand(
 pub fn executePipeline(
     allocator: std.mem.Allocator,
     stdout: anytype,
-    left_cmd: []const u8,
-    right_cmd: []const u8,
+    commands: []const []const u8,
 ) !builtins.CommandResult {
-    const left_parsed = parser.parseCommand(left_cmd);
-    const right_parsed = parser.parseCommand(right_cmd);
+    var stages = std.ArrayList(executor.Stage){};
+    defer stages.deinit(allocator);
 
-    if (left_parsed.name.len == 0) {
-        try stdout.print("{s}: command not found\n", .{left_cmd});
-        return .continue_loop;
-    }
-    if (right_parsed.name.len == 0) {
-        try stdout.print("{s}: command not found\n", .{right_cmd});
-        return .continue_loop;
+    var owned_paths = std.ArrayList(?[]const u8){};
+    defer {
+        for (owned_paths.items) |p| if (p) |path_buf| allocator.free(path_buf);
+        owned_paths.deinit(allocator);
     }
 
-    const left_is_builtin = builtins.isBuiltin(left_parsed.name);
-    const right_is_builtin = builtins.isBuiltin(right_parsed.name);
-
-    const left_path = if (left_is_builtin) null else try path.findInPath(allocator, left_parsed.name);
-    defer if (left_path) |p| allocator.free(p);
-    if (!left_is_builtin and left_path == null) {
-        try stdout.print("{s}: command not found\n", .{left_parsed.name});
-        return .continue_loop;
+    var owned_argvs = std.ArrayList(?[]const []const u8){};
+    defer {
+        for (owned_argvs.items) |argv_opt| if (argv_opt) |argv| freeArgv(allocator, argv);
+        owned_argvs.deinit(allocator);
     }
 
-    const right_path = if (right_is_builtin) null else try path.findInPath(allocator, right_parsed.name);
-    defer if (right_path) |p| allocator.free(p);
-    if (!right_is_builtin and right_path == null) {
-        try stdout.print("{s}: command not found\n", .{right_parsed.name});
-        return .continue_loop;
+    for (commands) |cmd_part| {
+        const parsed = parser.parseCommand(cmd_part);
+        if (parsed.name.len == 0) {
+            try stdout.print("{s}: command not found\n", .{cmd_part});
+            return .continue_loop;
+        }
+
+        const is_builtin = builtins.isBuiltin(parsed.name);
+        var cmd_path: ?[]const u8 = null;
+        if (!is_builtin) {
+            cmd_path = try path.findInPath(allocator, parsed.name);
+        }
+        if (!is_builtin and cmd_path == null) {
+            try stdout.print("{s}: command not found\n", .{parsed.name});
+            return .continue_loop;
+        }
+
+        try owned_paths.append(allocator, cmd_path);
+
+        var argv: ?[]const []const u8 = null;
+        if (!is_builtin) {
+            argv = try parser.parseArgs(allocator, parsed.name, parsed.args);
+        }
+        try owned_argvs.append(allocator, argv);
+
+        try stages.append(allocator, .{
+            .is_builtin = is_builtin,
+            .name = parsed.name,
+            .args = parsed.args,
+            .path = cmd_path,
+            .argv = argv,
+        });
     }
 
-    const left_argv = if (left_is_builtin) null else try parser.parseArgs(allocator, left_parsed.name, left_parsed.args);
-    defer if (left_argv) |argv| allocator.free(argv);
-
-    const right_argv = if (right_is_builtin) null else try parser.parseArgs(allocator, right_parsed.name, right_parsed.args);
-    defer if (right_argv) |argv| allocator.free(argv);
-
-    try executor.runPipeline(
-        allocator,
-        left_path,
-        left_is_builtin,
-        left_parsed.name,
-        left_parsed.args,
-        left_argv,
-        right_path,
-        right_is_builtin,
-        right_parsed.name,
-        right_parsed.args,
-        right_argv,
-    );
+    try executor.runPipeline(allocator, stages.items);
     return .continue_loop;
 }
