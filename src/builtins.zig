@@ -33,15 +33,34 @@ pub fn executePwd(allocator: std.mem.Allocator, stdout: anytype) !void {
     try stdout.print("{s}\n", .{cwd});
 }
 
-pub fn executeCd(stdout: anytype, args: ?[]const u8) !void {
+pub fn executeCd(allocator: std.mem.Allocator, stdout: anytype, args: ?[]const u8) !void {
     if (args == null or args.?.len == 0) {
         try stdout.print("cd: missing argument\n", .{});
         return;
     }
 
-    const dir = std.mem.trim(u8, args.?, " ");
+    const arg = std.mem.trim(u8, args.?, " ");
+    var path_buf: [512]u8 = undefined;
+    var dir: []const u8 = arg;
+
+    if (std.mem.eql(u8, arg, "~")) {
+        const home = std.process.getEnvVarOwned(allocator, "HOME") catch {
+            try stdout.print("cd: HOME not set\n", .{});
+            return;
+        };
+        defer allocator.free(home);
+        dir = try std.fmt.bufPrint(&path_buf, "{s}", .{home});
+    } else if (std.mem.startsWith(u8, arg, "~/")) {
+        const home = std.process.getEnvVarOwned(allocator, "HOME") catch {
+            try stdout.print("cd: HOME not set\n", .{});
+            return;
+        };
+        defer allocator.free(home);
+        dir = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ home, arg[2..] });
+    }
+
     std.posix.chdir(dir) catch {
-        try stdout.print("cd: {s}: No such file or directory\n", .{dir});
+        try stdout.print("cd: {s}: No such file or directory\n", .{arg});
     };
 }
 

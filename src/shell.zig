@@ -23,7 +23,7 @@ pub fn executeCommand(
     }
 
     if (std.mem.eql(u8, cmd_name, "cd")) {
-        try builtins.executeCd(stdout, args);
+        try builtins.executeCd(allocator, stdout, args);
         return .continue_loop;
     }
 
