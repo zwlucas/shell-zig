@@ -26,6 +26,16 @@ fn parseCommand(input: []const u8) struct { name: []const u8, args: ?[]const u8 
     };
 }
 
+fn isBuiltin(cmd_name: []const u8) bool {
+    const builtins = [_][]const u8{ "exit", "echo", "type" };
+    for (builtins) |builtin| {
+        if (std.mem.eql(u8, cmd_name, builtin)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn executeCommand(cmd_name: []const u8, args: ?[]const u8) !CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) {
         return .exit_shell;
@@ -36,6 +46,17 @@ fn executeCommand(cmd_name: []const u8, args: ?[]const u8) !CommandResult {
             try stdout.print("{s}\n", .{a});
         } else {
             try stdout.print("\n", .{});
+        }
+        return .continue_loop;
+    }
+
+    if (std.mem.eql(u8, cmd_name, "type")) {
+        if (args) |a| {
+            if (isBuiltin(a)) {
+                try stdout.print("{s} is a shell builtin\n", .{a});
+            } else {
+                try stdout.print("{s}: not found\n", .{a});
+            }
         }
         return .continue_loop;
     }
