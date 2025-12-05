@@ -3,6 +3,7 @@ const std = @import("std");
 pub const ParsedCommand = struct {
     name: []const u8,
     args: ?[]const u8,
+    output_redirect: ?[]const u8,
 };
 
 pub fn parseCommand(input: []const u8) ParsedCommand {
@@ -13,7 +14,7 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
     while (i < input.len and input[i] == ' ') : (i += 1) {}
 
     if (i >= input.len) {
-        return .{ .name = "", .args = null };
+        return .{ .name = "", .args = null, .output_redirect = null };
     }
 
     if (input[i] == '\'' or input[i] == '"') {
@@ -36,10 +37,42 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
 
     while (i < input.len and input[i] == ' ') : (i += 1) {}
 
-    const cmd_name = cmd_buf.toOwnedSlice(std.heap.page_allocator) catch "";
-    const args = if (i < input.len) input[i..] else null;
+    var redirect_pos: ?usize = null;
+    var j = i;
+    while (j < input.len) : (j += 1) {
+        if (input[j] == '>' or (input[j] == '1' and j + 1 < input.len and input[j + 1] == '>')) {
+            redirect_pos = j;
+            break;
+        }
+    }
 
-    return .{ .name = cmd_name, .args = args };
+    const cmd_name = cmd_buf.toOwnedSlice(std.heap.page_allocator) catch "";
+    var args: ?[]const u8 = null;
+    var output_redirect: ?[]const u8 = null;
+
+    if (redirect_pos) |pos| {
+        if (pos > i) args = input[i..pos];
+
+        var k = pos;
+        if (input[k] == '1') k += 1;
+        if (k < input.len and input[k] == '>') k += 1;
+
+        while (k < input.len and input[k] == ' ') : (k += 1) {}
+
+        if (k < input.len) {
+            var redir_buf = std.ArrayList(u8){};
+            defer redir_buf.deinit(std.heap.page_allocator);
+
+            while (k < input.len and input[k] != ' ') : (k += 1) {
+                _ = redir_buf.append(std.heap.page_allocator, input[k]) catch {};
+            }
+            output_redirect = redir_buf.toOwnedSlice(std.heap.page_allocator) catch null;
+        }
+    } else if (i < input.len) {
+        args = input[i..];
+    }
+
+    return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect };
 }
 
 pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {
