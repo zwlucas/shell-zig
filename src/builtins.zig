@@ -29,7 +29,11 @@ pub fn executeEcho(stdout: anytype, args: ?[]const u8) !void {
         var last_was_space = false;
 
         while (i < a.len) : (i += 1) {
-            if (!in_quote and (a[i] == '\'' or a[i] == '"')) {
+            if (!in_quote and a[i] == '\\' and i + 1 < a.len) {
+                i += 1;
+                _ = unquoted.append(std.heap.page_allocator, a[i]) catch {};
+                last_was_space = false;
+            } else if (!in_quote and (a[i] == '\'' or a[i] == '"')) {
                 in_quote = true;
                 quote_char = a[i];
                 last_was_space = false;

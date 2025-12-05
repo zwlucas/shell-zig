@@ -22,23 +22,34 @@ pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?
 
     if (args_str) |args| {
         var i: usize = 0;
+        var arg_buf = std.ArrayList(u8){};
+        defer arg_buf.deinit(allocator);
+
         while (i < args.len) {
             if (args[i] == '\'' or args[i] == '"') {
                 const quote = args[i];
                 i += 1;
-                const start = i;
-                while (i < args.len and args[i] != quote) : (i += 1) {}
-                if (i <= args.len) {
-                    try args_list.append(allocator, args[start..i]);
-                    i += 1;
+                while (i < args.len and args[i] != quote) : (i += 1) {
+                    try arg_buf.append(allocator, args[i]);
                 }
-            } else if (args[i] != ' ') {
-                const start = i;
-                while (i < args.len and args[i] != ' ' and args[i] != '\'' and args[i] != '"') : (i += 1) {}
-                try args_list.append(allocator, args[start..i]);
+                if (i < args.len) i += 1;
+            } else if (args[i] == '\\' and i + 1 < args.len) {
+                i += 1;
+                try arg_buf.append(allocator, args[i]);
+                i += 1;
+            } else if (args[i] == ' ') {
+                if (arg_buf.items.len > 0) {
+                    try args_list.append(allocator, try arg_buf.toOwnedSlice(allocator));
+                }
+                i += 1;
             } else {
+                try arg_buf.append(allocator, args[i]);
                 i += 1;
             }
+        }
+
+        if (arg_buf.items.len > 0) {
+            try args_list.append(allocator, try arg_buf.toOwnedSlice(allocator));
         }
     }
 
