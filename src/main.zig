@@ -8,8 +8,14 @@ var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
 const stdout = &stdout_writer.interface;
 
 pub fn main() !void {
-    try stdout.print("$ ", .{});
+    while (true) {
+        try stdout.print("$ ", .{});
 
-    const command = try stdin.takeDelimiter('\n');
-    try stdout.print("{s}: command not found\n", .{command.?});
+        const command = try stdin.takeDelimiter('\n');
+        if (command) |cmd| {
+            try stdout.print("{s}: command not found\n", .{cmd});
+        } else {
+            break;
+        }
+    }
 }
