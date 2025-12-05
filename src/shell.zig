@@ -22,6 +22,11 @@ pub fn executeCommand(
         return .continue_loop;
     }
 
+    if (std.mem.eql(u8, cmd_name, "cd")) {
+        try builtins.executeCd(stdout, args);
+        return .continue_loop;
+    }
+
     if (std.mem.eql(u8, cmd_name, "type")) {
         try builtins.executeType(allocator, stdout, args);
         return .continue_loop;

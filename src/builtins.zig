@@ -1,7 +1,7 @@
 const std = @import("std");
 const path = @import("path.zig");
 
-const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd" };
+const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd", "cd" };
 
 pub const CommandResult = enum {
     continue_loop,
@@ -31,6 +31,18 @@ pub fn executePwd(allocator: std.mem.Allocator, stdout: anytype) !void {
     const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(cwd);
     try stdout.print("{s}\n", .{cwd});
+}
+
+pub fn executeCd(stdout: anytype, args: ?[]const u8) !void {
+    if (args == null or args.?.len == 0) {
+        try stdout.print("cd: missing argument\n", .{});
+        return;
+    }
+
+    const dir = std.mem.trim(u8, args.?, " ");
+    std.posix.chdir(dir) catch {
+        try stdout.print("cd: {s}: No such file or directory\n", .{dir});
+    };
 }
 
 pub fn executeType(allocator: std.mem.Allocator, stdout: anytype, args: ?[]const u8) !void {
