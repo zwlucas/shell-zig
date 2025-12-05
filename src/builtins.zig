@@ -168,3 +168,16 @@ pub fn executeHistoryRead(allocator: std.mem.Allocator, stdout: anytype, file_pa
         }
     }
 }
+
+pub fn executeHistoryWrite(stdout: anytype, file_path: []const u8, history_list: []const []const u8) !void {
+    const file = std.fs.cwd().createFile(file_path, .{}) catch {
+        try stdout.print("history: cannot write to {s}: error\n", .{file_path});
+        return;
+    };
+    defer file.close();
+
+    for (history_list) |cmd| {
+        try file.writeAll(cmd);
+        try file.writeAll("\n");
+    }
+}

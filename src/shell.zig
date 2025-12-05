@@ -24,13 +24,19 @@ pub fn executeCommand(
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "history")) {
-        // Check if args contain -r flag for reading from file
+        // Check if args contain -r or -w flag for reading/writing file
         if (args) |a| {
             const trimmed = std.mem.trim(u8, a, " ");
             if (std.mem.startsWith(u8, trimmed, "-r ")) {
                 const file_path = std.mem.trim(u8, trimmed[3..], " ");
                 if (file_path.len > 0) {
                     try builtins.executeHistoryRead(allocator, stdout, file_path, history);
+                }
+                return .continue_loop;
+            } else if (std.mem.startsWith(u8, trimmed, "-w ")) {
+                const file_path = std.mem.trim(u8, trimmed[3..], " ");
+                if (file_path.len > 0) {
+                    try builtins.executeHistoryWrite(stdout, file_path, history.items);
                 }
                 return .continue_loop;
             }
