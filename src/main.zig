@@ -363,6 +363,37 @@ pub fn main() !void {
 
     var last_written_index: usize = 0;
 
+    // Load history from HISTFILE if it exists
+    if (std.posix.getenv("HISTFILE")) |histfile_path| {
+        const file = std.fs.cwd().openFile(histfile_path, .{}) catch null;
+        if (file) |f| {
+            defer f.close();
+
+            const file_size = f.getEndPos() catch 0;
+            if (file_size > 0) {
+                const buffer = allocator.alloc(u8, file_size) catch null;
+                if (buffer) |buf| {
+                    defer allocator.free(buf);
+
+                    const bytes_read = f.readAll(buf) catch 0;
+                    if (bytes_read > 0) {
+                        var line_iter = std.mem.splitScalar(u8, buf[0..bytes_read], '\n');
+                        while (line_iter.next()) |line| {
+                            const trimmed = std.mem.trim(u8, line, " \r");
+                            if (trimmed.len > 0) {
+                                const line_copy = allocator.dupe(u8, trimmed) catch continue;
+                                history.append(allocator, line_copy) catch {
+                                    allocator.free(line_copy);
+                                    continue;
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     const stdout = std.fs.File.stdout();
 
     while (true) {
