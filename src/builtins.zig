@@ -40,6 +40,15 @@ pub fn executeEcho(stdout: anytype, args: ?[]const u8) !void {
             } else if (in_quote and a[i] == quote_char) {
                 in_quote = false;
                 last_was_space = false;
+            } else if (in_quote and quote_char == '"' and a[i] == '\\' and i + 1 < a.len) {
+                const next = a[i + 1];
+                if (next == '"' or next == '\\') {
+                    i += 1;
+                    _ = unquoted.append(std.heap.page_allocator, a[i]) catch {};
+                } else {
+                    _ = unquoted.append(std.heap.page_allocator, a[i]) catch {};
+                }
+                last_was_space = false;
             } else if (!in_quote and a[i] == ' ') {
                 if (!last_was_space) {
                     _ = unquoted.append(std.heap.page_allocator, ' ') catch {};

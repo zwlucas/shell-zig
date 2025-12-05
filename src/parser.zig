@@ -26,11 +26,26 @@ pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?
         defer arg_buf.deinit(allocator);
 
         while (i < args.len) {
-            if (args[i] == '\'' or args[i] == '"') {
-                const quote = args[i];
+            if (args[i] == '\'') {
                 i += 1;
-                while (i < args.len and args[i] != quote) : (i += 1) {
+                while (i < args.len and args[i] != '\'') : (i += 1) {
                     try arg_buf.append(allocator, args[i]);
+                }
+                if (i < args.len) i += 1;
+            } else if (args[i] == '"') {
+                i += 1;
+                while (i < args.len and args[i] != '"') : (i += 1) {
+                    if (args[i] == '\\' and i + 1 < args.len) {
+                        const next = args[i + 1];
+                        if (next == '"' or next == '\\') {
+                            i += 1;
+                            try arg_buf.append(allocator, args[i]);
+                        } else {
+                            try arg_buf.append(allocator, args[i]);
+                        }
+                    } else {
+                        try arg_buf.append(allocator, args[i]);
+                    }
                 }
                 if (i < args.len) i += 1;
             } else if (args[i] == '\\' and i + 1 < args.len) {
