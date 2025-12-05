@@ -74,6 +74,9 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
                     try stdout.writeAll(" ");
                     try buffer.appendSlice(allocator, remaining);
                     try buffer.append(allocator, ' ');
+                } else {
+                    // No completion found, ring the bell
+                    try stdout.writeAll("\x07");
                 }
             }
         } else if ((c == 127 or c == 8) and is_tty) {
