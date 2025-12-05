@@ -5,7 +5,6 @@ const path = @import("path.zig");
 const executor = @import("executor.zig");
 
 fn freeArgv(allocator: std.mem.Allocator, argv: []const []const u8) void {
-    // argv[0] is cmd_name (not allocated), argv[1..] are allocated by parseArgs
     for (argv[1..]) |arg| allocator.free(arg);
     allocator.free(argv);
 }
@@ -25,7 +24,6 @@ pub fn executeCommand(
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "history")) {
-        // Check if args contain -r, -w, or -a flag for reading/writing/appending file
         if (args) |a| {
             const trimmed = std.mem.trim(u8, a, " ");
             if (std.mem.startsWith(u8, trimmed, "-r ")) {
