@@ -5,6 +5,54 @@ const builtins = @import("builtins.zig");
 
 const BUILTINS = [_][]const u8{ "echo", "exit" };
 
+fn findAllMatches(allocator: std.mem.Allocator, partial: []const u8) !std.ArrayList([]const u8) {
+    var matches = std.ArrayList([]const u8){};
+
+    for (BUILTINS) |builtin| {
+        if (std.mem.startsWith(u8, builtin, partial)) {
+            const duped = try allocator.dupe(u8, builtin);
+            try matches.append(allocator, duped);
+        }
+    }
+
+    const path_env = std.posix.getenv("PATH") orelse return matches;
+
+    var path_iter = std.mem.splitScalar(u8, path_env, ':');
+    while (path_iter.next()) |dir_path| {
+        if (dir_path.len == 0) continue;
+
+        var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch continue;
+        defer dir.close();
+
+        var iter = dir.iterate();
+        while (iter.next() catch continue) |entry| {
+            if (entry.kind == .file or entry.kind == .sym_link) {
+                if (std.mem.startsWith(u8, entry.name, partial)) {
+                    const stat = dir.statFile(entry.name) catch continue;
+                    if (stat.mode & 0o111 != 0) {
+                        var already_exists = false;
+                        for (matches.items) |existing| {
+                            if (std.mem.eql(u8, existing, entry.name)) {
+                                already_exists = true;
+                                break;
+                            }
+                        }
+                        if (!already_exists) {
+                            const duped = allocator.dupe(u8, entry.name) catch continue;
+                            matches.append(allocator, duped) catch {
+                                allocator.free(duped);
+                                continue;
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return matches;
+}
+
 fn tryComplete(allocator: std.mem.Allocator, partial: []const u8) ?[]const u8 {
     var matches: usize = 0;
     var match: ?[]const u8 = null;
@@ -108,6 +156,8 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
     defer buffer.deinit(allocator);
 
     var byte: [1]u8 = undefined;
+    var last_tab_partial: ?[]const u8 = null;
+    var last_was_tab = false;
 
     while (true) {
         const bytes_read = try stdin.read(&byte);
@@ -116,19 +166,61 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
         const c = byte[0];
 
         if (c == '\n' or c == '\r') {
+            if (last_tab_partial) |p| allocator.free(p);
             return try buffer.toOwnedSlice(allocator);
         } else if (c == '\t' and is_tty) {
             const partial = buffer.items;
             if (partial.len > 0 and std.mem.indexOf(u8, partial, " ") == null) {
-                if (tryComplete(allocator, partial)) |completion| {
-                    defer allocator.free(completion);
-                    const remaining = completion[partial.len..];
-                    try stdout.writeAll(remaining);
-                    try stdout.writeAll(" ");
-                    try buffer.appendSlice(allocator, remaining);
-                    try buffer.append(allocator, ' ');
+                const is_double_tab = last_was_tab and last_tab_partial != null and std.mem.eql(u8, last_tab_partial.?, partial);
+
+                if (is_double_tab) {
+                    var matches = try findAllMatches(allocator, partial);
+                    defer {
+                        for (matches.items) |match| allocator.free(match);
+                        matches.deinit(allocator);
+                    }
+
+                    if (matches.items.len > 1) {
+                        std.mem.sort([]const u8, matches.items, {}, struct {
+                            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                                return std.mem.order(u8, a, b) == .lt;
+                            }
+                        }.lessThan);
+
+                        try stdout.writeAll("\n");
+                        for (matches.items, 0..) |match, i| {
+                            try stdout.writeAll(match);
+                            if (i < matches.items.len - 1) {
+                                try stdout.writeAll("  ");
+                            }
+                        }
+                        try stdout.writeAll("\n$ ");
+                        try stdout.writeAll(partial);
+                    }
+
+                    last_was_tab = false;
+                    if (last_tab_partial) |p| {
+                        allocator.free(p);
+                        last_tab_partial = null;
+                    }
                 } else {
-                    try stdout.writeAll("\x07");
+                    if (tryComplete(allocator, partial)) |completion| {
+                        defer allocator.free(completion);
+                        const remaining = completion[partial.len..];
+                        try stdout.writeAll(remaining);
+                        try stdout.writeAll(" ");
+                        try buffer.appendSlice(allocator, remaining);
+                        try buffer.append(allocator, ' ');
+                        last_was_tab = false;
+                        if (last_tab_partial) |p| allocator.free(p);
+                        last_tab_partial = null;
+                    } else {
+                        // No unique completion - ring bell and remember this for double-tab
+                        try stdout.writeAll("\x07");
+                        last_was_tab = true;
+                        if (last_tab_partial) |p| allocator.free(p);
+                        last_tab_partial = try allocator.dupe(u8, partial);
+                    }
                 }
             }
         } else if ((c == 127 or c == 8) and is_tty) {
@@ -136,10 +228,20 @@ fn readCommand(allocator: std.mem.Allocator) !?[]const u8 {
                 _ = buffer.pop();
                 try stdout.writeAll("\x08 \x08");
             }
+            last_was_tab = false;
+            if (last_tab_partial) |p| {
+                allocator.free(p);
+                last_tab_partial = null;
+            }
         } else if (c >= 32 and c < 127) {
             try buffer.append(allocator, c);
             if (is_tty) {
                 try stdout.writeAll(&[_]u8{c});
+            }
+            last_was_tab = false;
+            if (last_tab_partial) |p| {
+                allocator.free(p);
+                last_tab_partial = null;
             }
         } else if (c == '\t' and !is_tty) {
             try buffer.append(allocator, c);
