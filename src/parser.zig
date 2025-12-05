@@ -6,11 +6,40 @@ pub const ParsedCommand = struct {
 };
 
 pub fn parseCommand(input: []const u8) ParsedCommand {
-    const space_pos = std.mem.indexOfScalar(u8, input, ' ');
-    if (space_pos) |pos| {
-        return .{ .name = input[0..pos], .args = input[pos + 1 ..] };
+    var i: usize = 0;
+    var cmd_buf = std.ArrayList(u8){};
+    defer cmd_buf.deinit(std.heap.page_allocator);
+
+    while (i < input.len and input[i] == ' ') : (i += 1) {}
+
+    if (i >= input.len) {
+        return .{ .name = "", .args = null };
     }
-    return .{ .name = input, .args = null };
+
+    if (input[i] == '\'' or input[i] == '"') {
+        const quote = input[i];
+        i += 1;
+        while (i < input.len and input[i] != quote) : (i += 1) {
+            _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+        }
+        if (i < input.len) i += 1;
+    } else {
+        while (i < input.len and input[i] != ' ') : (i += 1) {
+            if (input[i] == '\\' and i + 1 < input.len) {
+                i += 1;
+                _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+            } else {
+                _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+            }
+        }
+    }
+
+    while (i < input.len and input[i] == ' ') : (i += 1) {}
+
+    const cmd_name = cmd_buf.toOwnedSlice(std.heap.page_allocator) catch "";
+    const args = if (i < input.len) input[i..] else null;
+
+    return .{ .name = cmd_name, .args = args };
 }
 
 pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {
