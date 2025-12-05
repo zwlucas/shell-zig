@@ -19,8 +19,14 @@ pub fn executeCommand(
     error_redirect: ?[]const u8,
     append_output: ?[]const u8,
     append_error: ?[]const u8,
+    history_list: []const []const u8,
 ) !builtins.CommandResult {
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
+
+    if (std.mem.eql(u8, cmd_name, "history")) {
+        try builtins.executeHistory(stdout, history_list);
+        return .continue_loop;
+    }
 
     if (std.mem.eql(u8, cmd_name, "echo")) {
         if (error_redirect) |file| {

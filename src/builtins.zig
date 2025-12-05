@@ -1,7 +1,7 @@
 const std = @import("std");
 const path = @import("path.zig");
 
-const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd", "cd" };
+const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd", "cd", "history" };
 
 pub const CommandResult = enum {
     continue_loop,
@@ -113,5 +113,11 @@ pub fn executeType(allocator: std.mem.Allocator, stdout: anytype, args: ?[]const
         } else {
             try stdout.print("{s}: not found\n", .{a});
         }
+    }
+}
+
+pub fn executeHistory(stdout: anytype, history_list: []const []const u8) !void {
+    for (history_list, 1..) |cmd, idx| {
+        try stdout.print("    {d}  {s}\n", .{ idx, cmd });
     }
 }

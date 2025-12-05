@@ -285,6 +285,12 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    var history = std.ArrayList([]const u8){};
+    defer {
+        for (history.items) |cmd| allocator.free(cmd);
+        history.deinit(allocator);
+    }
+
     const stdout = std.fs.File.stdout();
 
     while (true) {
@@ -296,6 +302,10 @@ pub fn main() !void {
             try stdout.writeAll("\n");
             var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
             const stdout_iface = &stdout_writer.interface;
+
+            // Record command in history (duplicate it for long-term storage)
+            const cmd_copy = try allocator.dupe(u8, cmd);
+            try history.append(allocator, cmd_copy);
 
             if (std.mem.indexOfScalar(u8, cmd, '|')) |_| {
                 var segments = std.ArrayList([]const u8){};
@@ -326,7 +336,7 @@ pub fn main() !void {
 
                 if (segments.items.len == 1) {
                     const parsed = parser.parseCommand(cmd);
-                    const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error);
+                    const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, history.items);
                     if (result == .exit_shell) break;
                 } else {
                     const result = try shell.executePipeline(allocator, stdout_iface, segments.items);
@@ -335,7 +345,7 @@ pub fn main() !void {
             } else {
                 const parsed = parser.parseCommand(cmd);
 
-                const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error);
+                const result = try shell.executeCommand(allocator, stdout_iface, parsed.name, parsed.args, parsed.output_redirect, parsed.error_redirect, parsed.append_output, parsed.append_error, history.items);
 
                 if (result == .exit_shell) break;
             }
