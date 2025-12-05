@@ -116,8 +116,21 @@ pub fn executeType(allocator: std.mem.Allocator, stdout: anytype, args: ?[]const
     }
 }
 
-pub fn executeHistory(stdout: anytype, history_list: []const []const u8) !void {
-    for (history_list, 1..) |cmd, idx| {
+pub fn executeHistory(stdout: anytype, history_list: []const []const u8, args: ?[]const u8) !void {
+    var limit: usize = history_list.len;
+
+    if (args) |a| {
+        const trimmed = std.mem.trim(u8, a, " ");
+        if (trimmed.len > 0) {
+            limit = std.fmt.parseInt(usize, trimmed, 10) catch {
+                try stdout.print("history: invalid argument\n", .{});
+                return;
+            };
+        }
+    }
+
+    const start = if (limit < history_list.len) history_list.len - limit else 0;
+    for (history_list[start..], start + 1..) |cmd, idx| {
         try stdout.print("    {d}  {s}\n", .{ idx, cmd });
     }
 }

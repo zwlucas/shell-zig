@@ -24,7 +24,7 @@ pub fn executeCommand(
     if (std.mem.eql(u8, cmd_name, "exit")) return builtins.executeExit();
 
     if (std.mem.eql(u8, cmd_name, "history")) {
-        try builtins.executeHistory(stdout, history_list);
+        try builtins.executeHistory(stdout, history_list, args);
         return .continue_loop;
     }
 
