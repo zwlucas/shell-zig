@@ -28,7 +28,7 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
     }
 }
 
-pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, output_file: ?[]const u8, error_file: ?[]const u8, append_file: ?[]const u8) !void {
+pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, output_file: ?[]const u8, error_file: ?[]const u8, append_file: ?[]const u8, append_error_file: ?[]const u8) !void {
     const argv_z = try allocator.allocSentinel(?[*:0]const u8, argv.len, null);
     defer allocator.free(argv_z);
 
@@ -77,6 +77,21 @@ pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path
                 std.posix.exit(1);
             };
             defer fd.close();
+            try std.posix.dup2(fd.handle, 2);
+        } else if (append_error_file) |file| {
+            const cwd = std.fs.cwd();
+            const fd = cwd.openFile(file, .{ .mode = .write_only }) catch |err| blk: {
+                if (err == error.FileNotFound) {
+                    break :blk cwd.createFile(file, .{}) catch {
+                        std.posix.exit(1);
+                    };
+                }
+                std.posix.exit(1);
+            };
+            defer fd.close();
+            fd.seekFromEnd(0) catch {
+                std.posix.exit(1);
+            };
             try std.posix.dup2(fd.handle, 2);
         }
 
