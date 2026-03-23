@@ -346,11 +346,15 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     var iter = dir.iterate();
                     while (iter.next() catch null) |entry| {
                         if (std.mem.startsWith(u8, entry.name, search_prefix)) {
-                            if (allocator.dupe(u8, entry.name)) |duped| {
-                                matches.append(allocator, duped) catch {
-                                    allocator.free(duped);
-                                };
-                            } else |_| {}
+                            const is_dir = (entry.kind == .directory);
+                            const duped = if (is_dir)
+                                std.fmt.allocPrint(allocator, "{s}/", .{entry.name}) catch continue
+                            else
+                                allocator.dupe(u8, entry.name) catch continue;
+
+                            matches.append(allocator, duped) catch {
+                                allocator.free(duped);
+                            };
                         }
                     }
                 } else |_| {}
@@ -364,8 +368,11 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                         try stdout.writeAll(remaining);
                         try buffer.appendSlice(allocator, remaining);
                     }
-                    try stdout.writeAll(" ");
-                    try buffer.append(allocator, ' ');
+                    if (!std.mem.endsWith(u8, completion, "/")) {
+                        try stdout.writeAll(" ");
+                        try buffer.append(allocator, ' ');
+                    }
+
 
                     last_was_tab = false;
                     if (last_tab_partial) |p| allocator.free(p);
