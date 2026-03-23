@@ -187,18 +187,15 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
             if (last_tab_partial) |p| allocator.free(p);
             return try buffer.toOwnedSlice(allocator);
         } else if (c == 27 and is_tty) {
-            // Escape sequence - check for arrow keys
             var seq: [2]u8 = undefined;
             var seq_len: usize = 0;
 
-            // Try to read the next two bytes
             if (try stdin.read(seq[0..1]) > 0) {
                 seq_len = 1;
                 if (seq[0] == '[') {
                     if (try stdin.read(seq[1..2]) > 0) {
                         seq_len = 2;
                         if (seq[1] == 'A') {
-                            // UP arrow - recall previous command
                             const new_index = if (history_index) |idx|
                                 if (idx > 0) idx - 1 else idx
                             else if (history.items.len > 0)
@@ -209,13 +206,11 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                             if (new_index) |idx| {
                                 history_index = idx;
 
-                                // Clear current line
                                 while (buffer.items.len > 0) {
                                     _ = buffer.pop();
                                     try stdout.writeAll("\x08 \x08");
                                 }
 
-                                // Display historical command
                                 const cmd = history.items[idx];
                                 try buffer.appendSlice(allocator, cmd);
                                 try stdout.writeAll(cmd);
@@ -224,23 +219,19 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                                 last_was_tab = false;
                             }
                         } else if (seq[1] == 'B') {
-                            // DOWN arrow - recall next command or clear
                             if (history_index) |idx| {
                                 if (idx + 1 < history.items.len) {
                                     history_index = idx + 1;
 
-                                    // Clear current line
                                     while (buffer.items.len > 0) {
                                         _ = buffer.pop();
                                         try stdout.writeAll("\x08 \x08");
                                     }
 
-                                    // Display next historical command
                                     const cmd = history.items[idx + 1];
                                     try buffer.appendSlice(allocator, cmd);
                                     try stdout.writeAll(cmd);
                                 } else {
-                                    // Clear buffer and history_index
                                     while (buffer.items.len > 0) {
                                         _ = buffer.pop();
                                         try stdout.writeAll("\x08 \x08");
@@ -278,7 +269,6 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                         try stdout.writeAll(remaining);
                         try buffer.appendSlice(allocator, remaining);
                     }
-                    // Always add trailing space when exactly one match remains
                     try stdout.writeAll(" ");
                     try buffer.append(allocator, ' ');
 
@@ -291,7 +281,7 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                         const remaining = lcp[partial.len..];
                         try stdout.writeAll(remaining);
                         try buffer.appendSlice(allocator, remaining);
-                        // No trailing space because multiple matches remain
+
                         last_was_tab = false;
                         if (last_tab_partial) |p| allocator.free(p);
                         last_tab_partial = null;
@@ -323,6 +313,48 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                         if (last_tab_partial) |p| allocator.free(p);
                         last_tab_partial = try allocator.dupe(u8, partial);
                     }
+                }
+            } else if (partial.len > 0) {
+                const space_idx = std.mem.lastIndexOf(u8, partial, " ").?;
+                const prefix = partial[space_idx + 1..];
+
+                var matches = std.ArrayList([]const u8){};
+                defer {
+                    for (matches.items) |m| allocator.free(m);
+                    matches.deinit(allocator);
+                }
+
+                if (std.fs.cwd().openDir(".", .{ .iterate = true })) |*dir| {
+                    defer dir.close();
+                    var iter = dir.iterate();
+                    while (iter.next() catch null) |entry| {
+                        if (std.mem.startsWith(u8, entry.name, prefix)) {
+                            if (allocator.dupe(u8, entry.name)) |duped| {
+                                matches.append(allocator, duped) catch {
+                                    allocator.free(duped);
+                                };
+                            } else |_| {}
+                        }
+                    }
+                } else |_| {}
+
+                if (matches.items.len == 0) {
+                    try stdout.writeAll("\x07");
+                } else if (matches.items.len == 1) {
+                    const completion = matches.items[0];
+                    if (completion.len > prefix.len) {
+                        const remaining = completion[prefix.len..];
+                        try stdout.writeAll(remaining);
+                        try buffer.appendSlice(allocator, remaining);
+                    }
+                    try stdout.writeAll(" ");
+                    try buffer.append(allocator, ' ');
+
+                    last_was_tab = false;
+                    if (last_tab_partial) |p| allocator.free(p);
+                    last_tab_partial = null;
+                } else {
+                    try stdout.writeAll("\x07");
                 }
             }
         } else if ((c == 127 or c == 8) and is_tty) {
@@ -363,7 +395,6 @@ pub fn main() !void {
 
     var last_written_index: usize = 0;
 
-    // Load history from HISTFILE if it exists
     if (std.posix.getenv("HISTFILE")) |histfile_path| {
         const file = std.fs.cwd().openFile(histfile_path, .{}) catch null;
         if (file) |f| {
@@ -406,7 +437,6 @@ pub fn main() !void {
             var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
             const stdout_iface = &stdout_writer.interface;
 
-            // Record command in history (duplicate it for long-term storage)
             const cmd_copy = try allocator.dupe(u8, cmd);
             try history.append(allocator, cmd_copy);
 
@@ -457,7 +487,6 @@ pub fn main() !void {
         }
     }
 
-    // Save history to HISTFILE on exit
     if (std.posix.getenv("HISTFILE")) |histfile_path| {
         const file = std.fs.cwd().createFile(histfile_path, .{}) catch null;
         if (file) |f| {
