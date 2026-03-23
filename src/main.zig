@@ -335,7 +335,7 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     matches.deinit(allocator);
                 }
 
-                var dir_opt = if (std.mem.startsWith(u8, dir_path, "/"))
+                const dir_opt = if (std.mem.startsWith(u8, dir_path, "/"))
                     std.fs.openDirAbsolute(dir_path, .{ .iterate = true })
                 else
                     std.fs.cwd().openDir(dir_path, .{ .iterate = true });
