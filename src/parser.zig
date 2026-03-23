@@ -20,11 +20,26 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
         return .{ .name = "", .args = null, .output_redirect = null, .error_redirect = null, .append_output = null, .append_error = null };
     }
 
-    if (input[i] == '\'' or input[i] == '"') {
-        const quote = input[i];
+    if (input[i] == '\'') {
         i += 1;
-        while (i < input.len and input[i] != quote) : (i += 1) {
+        while (i < input.len and input[i] != '\'') : (i += 1) {
             _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+        }
+        if (i < input.len) i += 1;
+    } else if (input[i] == '"') {
+        i += 1;
+        while (i < input.len and input[i] != '"') : (i += 1) {
+            if (input[i] == '\\' and i + 1 < input.len) {
+                const next = input[i + 1];
+                if (next == '"' or next == '\\') {
+                    i += 1;
+                    _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+                } else {
+                    _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+                }
+            } else {
+                _ = cmd_buf.append(std.heap.page_allocator, input[i]) catch {};
+            }
         }
         if (i < input.len) i += 1;
     } else {
