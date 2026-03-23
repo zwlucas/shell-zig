@@ -378,7 +378,45 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     if (last_tab_partial) |p| allocator.free(p);
                     last_tab_partial = null;
                 } else {
-                    try stdout.writeAll("\x07");
+                    const is_double_tab = last_was_tab and last_tab_partial != null and std.mem.eql(u8, last_tab_partial.?, partial);
+                    const lcp = longestCommonPrefix(matches.items);
+
+                    if (lcp.len > search_prefix.len) {
+                        const remaining = lcp[search_prefix.len..];
+                        try stdout.writeAll(remaining);
+                        try buffer.appendSlice(allocator, remaining);
+
+                        last_was_tab = false;
+                        if (last_tab_partial) |p| allocator.free(p);
+                        last_tab_partial = null;
+                    } else if (is_double_tab) {
+                        std.mem.sort([]const u8, matches.items, {}, struct {
+                            fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                                return std.mem.order(u8, a, b) == .lt;
+                            }
+                        }.lessThan);
+
+                        try stdout.writeAll("\n");
+                        for (matches.items, 0..) |match, i| {
+                            try stdout.writeAll(match);
+                            if (i < matches.items.len - 1) {
+                                try stdout.writeAll("  ");
+                            }
+                        }
+                        try stdout.writeAll("\n$ ");
+                        try stdout.writeAll(partial);
+
+                        last_was_tab = false;
+                        if (last_tab_partial) |p| {
+                            allocator.free(p);
+                            last_tab_partial = null;
+                        }
+                    } else {
+                        try stdout.writeAll("\x07");
+                        last_was_tab = true;
+                        if (last_tab_partial) |p| allocator.free(p);
+                        last_tab_partial = try allocator.dupe(u8, partial);
+                    }
                 }
             }
         } else if ((c == 127 or c == 8) and is_tty) {
