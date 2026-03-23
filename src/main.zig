@@ -316,7 +316,18 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                 }
             } else if (partial.len > 0) {
                 const space_idx = std.mem.lastIndexOf(u8, partial, " ").?;
-                const prefix = partial[space_idx + 1..];
+                const raw_prefix = partial[space_idx + 1..];
+
+                var dir_path: []const u8 = ".";
+                var search_prefix: []const u8 = raw_prefix;
+
+                if (std.mem.lastIndexOfScalar(u8, raw_prefix, '/')) |slash_idx| {
+                    dir_path = raw_prefix[0..slash_idx];
+                    if (dir_path.len == 0) {
+                        dir_path = "/";
+                    }
+                    search_prefix = raw_prefix[slash_idx + 1..];
+                }
 
                 var matches = std.ArrayList([]const u8){};
                 defer {
@@ -324,12 +335,17 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     matches.deinit(allocator);
                 }
 
-                if (std.fs.cwd().openDir(".", .{ .iterate = true })) |opened_dir| {
+                var dir_opt = if (std.mem.startsWith(u8, dir_path, "/"))
+                    std.fs.openDirAbsolute(dir_path, .{ .iterate = true })
+                else
+                    std.fs.cwd().openDir(dir_path, .{ .iterate = true });
+
+                if (dir_opt) |opened_dir| {
                     var dir = opened_dir;
                     defer dir.close();
                     var iter = dir.iterate();
                     while (iter.next() catch null) |entry| {
-                        if (std.mem.startsWith(u8, entry.name, prefix)) {
+                        if (std.mem.startsWith(u8, entry.name, search_prefix)) {
                             if (allocator.dupe(u8, entry.name)) |duped| {
                                 matches.append(allocator, duped) catch {
                                     allocator.free(duped);
@@ -343,8 +359,8 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     try stdout.writeAll("\x07");
                 } else if (matches.items.len == 1) {
                     const completion = matches.items[0];
-                    if (completion.len > prefix.len) {
-                        const remaining = completion[prefix.len..];
+                    if (completion.len > search_prefix.len) {
+                        const remaining = completion[search_prefix.len..];
                         try stdout.writeAll(remaining);
                         try buffer.appendSlice(allocator, remaining);
                     }
