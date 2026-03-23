@@ -324,7 +324,8 @@ fn readCommand(allocator: std.mem.Allocator, history: std.ArrayList([]const u8))
                     matches.deinit(allocator);
                 }
 
-                if (std.fs.cwd().openDir(".", .{ .iterate = true })) |*dir| {
+                if (std.fs.cwd().openDir(".", .{ .iterate = true })) |opened_dir| {
+                    var dir = opened_dir;
                     defer dir.close();
                     var iter = dir.iterate();
                     while (iter.next() catch null) |entry| {
