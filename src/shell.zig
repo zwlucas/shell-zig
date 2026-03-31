@@ -19,6 +19,8 @@ pub fn executeCommand(
     error_redirect: ?[]const u8,
     append_output: ?[]const u8,
     append_error: ?[]const u8,
+    is_background: bool,
+    job_counter: *usize,
     history: *std.ArrayList([]const u8),
     last_written_index: *usize,
 ) !builtins.CommandResult {
@@ -169,9 +171,17 @@ pub fn executeCommand(
         }
 
         if (output_redirect != null or error_redirect != null or append_output != null or append_error != null) {
-            try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output, append_error);
+            const pid = try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output, append_error, is_background);
+            if (is_background) {
+                job_counter.* += 1;
+                try stdout.print("[{d}] {d}\n", .{ job_counter.*, pid });
+            }
         } else {
-            try executor.runExternalProgram(allocator, program_path, argv);
+            const pid = try executor.runExternalProgram(allocator, program_path, argv, is_background);
+            if (is_background) {
+                job_counter.* += 1;
+                try stdout.print("[{d}] {d}\n", .{ job_counter.*, pid });
+            }
         }
         return .continue_loop;
     }
@@ -184,6 +194,8 @@ pub fn executePipeline(
     allocator: std.mem.Allocator,
     stdout: anytype,
     commands: []const []const u8,
+    is_background: bool,
+    job_counter: *usize,
 ) !builtins.CommandResult {
     var stages = std.ArrayList(executor.Stage){};
     defer stages.deinit(allocator);
@@ -234,6 +246,10 @@ pub fn executePipeline(
         });
     }
 
-    try executor.runPipeline(allocator, stages.items);
+    const last_pid = try executor.runPipeline(allocator, stages.items, is_background);
+    if (is_background) {
+        job_counter.* += 1;
+        try stdout.print("[{d}] {d}\n", .{ job_counter.*, last_pid });
+    }
     return .continue_loop;
 }

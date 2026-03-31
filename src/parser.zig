@@ -7,6 +7,7 @@ pub const ParsedCommand = struct {
     error_redirect: ?[]const u8,
     append_output: ?[]const u8,
     append_error: ?[]const u8,
+    is_background: bool,
 };
 
 pub fn parseCommand(input: []const u8) ParsedCommand {
@@ -17,7 +18,7 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
     while (i < input.len and input[i] == ' ') : (i += 1) {}
 
     if (i >= input.len) {
-        return .{ .name = "", .args = null, .output_redirect = null, .error_redirect = null, .append_output = null, .append_error = null };
+        return .{ .name = "", .args = null, .output_redirect = null, .error_redirect = null, .append_output = null, .append_error = null, .is_background = false };
     }
 
     if (input[i] == '\'') {
@@ -104,6 +105,13 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
 
     while (args_end > i and input[args_end - 1] == ' ') : (args_end -= 1) {}
 
+    var is_background = false;
+    if (args_end > i and input[args_end - 1] == '&') {
+        is_background = true;
+        args_end -= 1;
+        while (args_end > i and input[args_end - 1] == ' ') : (args_end -= 1) {}
+    }
+
     if (args_end > i) {
         args = input[i..args_end];
     }
@@ -175,7 +183,7 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
         }
     }
 
-    return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect, .error_redirect = error_redirect, .append_output = append_output, .append_error = append_error };
+    return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect, .error_redirect = error_redirect, .append_output = append_output, .append_error = append_error, .is_background = is_background };
 }
 
 pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {

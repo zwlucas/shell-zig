@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtins = @import("builtins.zig");
 
-pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8) !void {
+pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, is_background: bool) !std.posix.pid_t {
     const argv_z = try allocator.allocSentinel(?[*:0]const u8, argv.len, null);
     defer allocator.free(argv_z);
 
@@ -25,11 +25,14 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
         };
         unreachable;
     } else {
-        _ = std.posix.waitpid(pid, 0);
+        if (!is_background) {
+            _ = std.posix.waitpid(pid, 0);
+        }
+        return pid;
     }
 }
 
-pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, output_file: ?[]const u8, error_file: ?[]const u8, append_file: ?[]const u8, append_error_file: ?[]const u8) !void {
+pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, output_file: ?[]const u8, error_file: ?[]const u8, append_file: ?[]const u8, append_error_file: ?[]const u8, is_background: bool) !std.posix.pid_t {
     const argv_z = try allocator.allocSentinel(?[*:0]const u8, argv.len, null);
     defer allocator.free(argv_z);
 
@@ -101,7 +104,10 @@ pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path
         };
         unreachable;
     } else {
-        _ = std.posix.waitpid(pid, 0);
+        if (!is_background) {
+            _ = std.posix.waitpid(pid, 0);
+        }
+        return pid;
     }
 }
 
@@ -139,24 +145,9 @@ fn runBuiltinInChild(
 pub fn runPipeline(
     allocator: std.mem.Allocator,
     stages: []const Stage,
-) !void {
-    if (stages.len == 0) return;
-    if (stages.len == 1) {
-        const s = stages[0];
-        if (s.is_builtin) {
-            runBuiltinInChild(allocator, s.name, s.args, 0, 1);
-        } else {
-            const argv_z = try allocator.allocSentinel(?[*:0]const u8, s.argv.?.len, @as(?[*:0]const u8, null));
-            defer allocator.free(argv_z);
-            for (s.argv.?, 0..) |arg, i| argv_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
-            defer {
-                for (argv_z[0..s.argv.?.len]) |arg_ptr| if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
-            }
-            const path_z = try allocator.dupeZ(u8, s.path.?);
-            defer allocator.free(path_z);
-            _ = std.posix.execveZ(path_z, argv_z, std.c.environ) catch std.posix.exit(1);
-        }
-    }
+    is_background: bool,
+) !std.posix.pid_t {
+    if (stages.len == 0) return 0;
 
     const pipes = try allocator.alloc([2]std.posix.fd_t, stages.len - 1);
     defer allocator.free(pipes);
@@ -203,9 +194,15 @@ pub fn runPipeline(
         std.posix.close(p[1]);
     }
 
-    for (pids) |pid| {
-        _ = std.posix.waitpid(pid, 0);
+    const last_pid = pids[pids.len - 1];
+
+    if (!is_background) {
+        for (pids) |pid| {
+            _ = std.posix.waitpid(pid, 0);
+        }
     }
+
+    return last_pid;
 }
 
 pub const Stage = struct {
