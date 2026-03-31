@@ -20,7 +20,7 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
     const pid = try std.posix.fork();
 
     if (pid == 0) {
-        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, @ptrCast(std.os.environ.ptr));
+        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, std.c.environ);
         std.debug.print("execve failed: {any}\n", .{err});
         std.posix.exit(1);
     } else {
@@ -98,7 +98,7 @@ pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path
             try std.posix.dup2(fd.handle, 2);
         }
 
-        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, @ptrCast(std.os.environ.ptr));
+        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, std.c.environ);
         std.debug.print("execve failed: {any}\n", .{err});
         std.posix.exit(1);
     } else {
@@ -180,7 +180,7 @@ pub fn runPipeline(
                 }
                 const path_z = try allocator.dupeZ(u8, s.path.?);
                 defer allocator.free(path_z);
-                const err = std.posix.execveZ(path_z.ptr, argv_z.ptr, @ptrCast(std.os.environ.ptr));
+                const err = std.posix.execveZ(path_z.ptr, argv_z.ptr, std.c.environ);
                 std.debug.print("execve failed in pipeline: {any}\n", .{err});
                 std.posix.exit(1);
             }

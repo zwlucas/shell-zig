@@ -20,7 +20,7 @@ pub fn findInPath(allocator: std.mem.Allocator, cmd_name: []const u8) !?[]const 
         const full_path = std.fs.path.join(allocator, &[_][]const u8{ dir, cmd_name }) catch continue;
         defer allocator.free(full_path);
 
-        const file = std.fs.openFileAbsolute(full_path, .{}) catch continue;
+        const file = std.fs.cwd().openFile(full_path, .{}) catch continue;
         const stat = file.stat() catch {
             file.close();
             continue;
