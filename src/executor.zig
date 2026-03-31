@@ -1,34 +1,15 @@
 const std = @import("std");
 const builtins = @import("builtins.zig");
 
-pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, is_background: bool) !std.posix.pid_t {
-    const argv_z = try allocator.allocSentinel(?[*:0]const u8, argv.len, null);
-    defer allocator.free(argv_z);
+pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8, argv: [][]const u8, is_background: bool) !std.posix.pid_t {
+    _ = program_path;
+    var child = std.process.Child.init(argv, allocator);
+    try child.spawn();
 
-    for (argv, 0..) |arg, i| {
-        argv_z[i] = (try allocator.dupeZ(u8, arg)).ptr;
+    if (!is_background) {
+        _ = try child.wait();
     }
-    defer {
-        for (argv_z[0..argv.len]) |arg_ptr| {
-            if (arg_ptr) |ptr| allocator.free(std.mem.span(ptr));
-        }
-    }
-
-    const program_path_z = try allocator.dupeZ(u8, program_path);
-    defer allocator.free(program_path_z);
-
-    const pid = try std.posix.fork();
-
-    if (pid == 0) {
-        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, std.c.environ);
-        std.debug.print("execve failed: {any}\n", .{err});
-        std.posix.exit(1);
-    } else {
-        if (!is_background) {
-            _ = std.posix.waitpid(pid, 0);
-        }
-        return pid;
-    }
+    return child.id;
 }
 
 pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path: []const u8, argv: []const []const u8, output_file: ?[]const u8, error_file: ?[]const u8, append_file: ?[]const u8, append_error_file: ?[]const u8, is_background: bool) !std.posix.pid_t {
@@ -209,5 +190,5 @@ pub const Stage = struct {
     name: []const u8,
     args: ?[]const u8,
     path: ?[]const u8,
-    argv: ?[]const []const u8,
+    argv: ?[][]const u8,
 };

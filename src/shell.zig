@@ -4,7 +4,7 @@ const builtins = @import("builtins.zig");
 const path = @import("path.zig");
 const executor = @import("executor.zig");
 
-fn freeArgv(allocator: std.mem.Allocator, argv: []const []const u8) void {
+fn freeArgv(allocator: std.mem.Allocator, argv: [][]const u8) void {
     // argv[0] is cmd_name (not allocated), argv[1..] are allocated by parseArgs
     for (argv[1..]) |arg| allocator.free(arg);
     allocator.free(argv);
@@ -165,11 +165,10 @@ pub fn executeCommand(
         defer allocator.free(program_path);
         // std.debug.print("Executing: {s} with args: {?s}\n", .{program_path, args});
 
-        const argv = try parser.parseArgs(allocator, cmd_name, args);
-        defer {
-            for (argv[1..]) |arg| allocator.free(arg);
-            allocator.free(argv);
-        }
+        var argv = try parser.parseArgs(allocator, cmd_name, args);
+        defer freeArgv(allocator, argv);
+        
+        argv[0] = program_path;
 
         if (output_redirect != null or error_redirect != null or append_output != null or append_error != null) {
             const pid = try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output, append_error, is_background);
@@ -207,7 +206,7 @@ pub fn executePipeline(
         owned_paths.deinit(allocator);
     }
 
-    var owned_argvs = std.ArrayList(?[]const []const u8){};
+    var owned_argvs = std.ArrayList(?[][]const u8){};
     defer {
         for (owned_argvs.items) |argv_opt| if (argv_opt) |argv| freeArgv(allocator, argv);
         owned_argvs.deinit(allocator);
@@ -232,9 +231,10 @@ pub fn executePipeline(
 
         try owned_paths.append(allocator, cmd_path);
 
-        var argv: ?[]const []const u8 = null;
+        var argv: ?[][]const u8 = null;
         if (!is_builtin) {
             argv = try parser.parseArgs(allocator, parsed.name, parsed.args);
+            if (cmd_path) |p| argv.?[0] = p;
         }
         try owned_argvs.append(allocator, argv);
 

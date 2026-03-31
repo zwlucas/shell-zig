@@ -186,7 +186,7 @@ pub fn parseCommand(input: []const u8) ParsedCommand {
     return .{ .name = cmd_name, .args = args, .output_redirect = output_redirect, .error_redirect = error_redirect, .append_output = append_output, .append_error = append_error, .is_background = is_background };
 }
 
-pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![]const []const u8 {
+pub fn parseArgs(allocator: std.mem.Allocator, cmd_name: []const u8, args_str: ?[]const u8) ![][]const u8 {
     var args_list = std.ArrayList([]const u8){};
     try args_list.ensureTotalCapacity(allocator, 16);
     errdefer args_list.deinit(allocator);
