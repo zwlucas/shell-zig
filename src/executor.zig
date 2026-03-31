@@ -128,6 +128,8 @@ fn runBuiltinInChild(
         builtins.executePwd(allocator, w) catch {};
     } else if (std.mem.eql(u8, cmd_name, "cd")) {
         builtins.executeCd(allocator, w, args) catch {};
+    } else if (std.mem.eql(u8, cmd_name, "jobs")) {
+        builtins.executeJobs();
     } else if (std.mem.eql(u8, cmd_name, "exit")) {
         // exit inside pipeline child just exits child
     }

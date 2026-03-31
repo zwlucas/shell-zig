@@ -1,7 +1,7 @@
 const std = @import("std");
 const path = @import("path.zig");
 
-const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd", "cd", "history" };
+const BUILTINS = [_][]const u8{ "exit", "echo", "type", "pwd", "cd", "history", "jobs" };
 
 pub const CommandResult = enum { continue_loop, exit_shell };
 
@@ -11,6 +11,8 @@ pub inline fn isBuiltin(cmd_name: []const u8) bool {
     }
     return false;
 }
+
+pub inline fn executeJobs() void {}
 
 pub inline fn executeExit() CommandResult {
     return .exit_shell;
