@@ -2,14 +2,17 @@ const std = @import("std");
 
 pub fn findInPath(allocator: std.mem.Allocator, cmd_name: []const u8) !?[]const u8 {
     if (std.mem.indexOfScalar(u8, cmd_name, '/') != null) {
-        const file = std.fs.openFileAbsolute(cmd_name, .{}) catch {
-            const cwd = std.fs.cwd();
-            const f = cwd.openFile(cmd_name, .{}) catch return null;
-            f.close();
+        const file = if (std.fs.path.isAbsolute(cmd_name))
+            std.fs.openFileAbsolute(cmd_name, .{}) catch return null
+        else
+            std.fs.cwd().openFile(cmd_name, .{}) catch return null;
+        
+        defer file.close();
+        const stat = file.stat() catch return null;
+        if ((stat.mode & 0o111) != 0) {
             return try allocator.dupe(u8, cmd_name);
-        };
-        file.close();
-        return try allocator.dupe(u8, cmd_name);
+        }
+        return null;
     }
 
     const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch return null;

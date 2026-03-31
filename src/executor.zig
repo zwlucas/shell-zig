@@ -14,13 +14,10 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
         }
     }
 
-    const program_path_z = try allocator.dupeZ(u8, program_path);
-    defer allocator.free(program_path_z);
-
     const pid = try std.posix.fork();
 
     if (pid == 0) {
-        const err = std.posix.execveZ(program_path_z.ptr, argv_z.ptr, std.c.environ);
+        const err = std.posix.execveZ(argv_z[0].?, argv_z.ptr, std.c.environ);
         std.debug.print("execve failed: {any}\n", .{err});
         std.posix.exit(1);
     } else {
