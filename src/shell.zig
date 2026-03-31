@@ -170,11 +170,6 @@ pub fn executeCommand(
             for (argv[1..]) |arg| allocator.free(arg);
             allocator.free(argv);
         }
-        
-        // Ensure argv[0] is the full path for better compatibility
-        const original_arg0 = argv[0];
-        argv[0] = program_path;
-        defer argv[0] = original_arg0;
 
         if (output_redirect != null or error_redirect != null or append_output != null or append_error != null) {
             const pid = try executor.runExternalProgramWithRedirect(allocator, program_path, argv, output_redirect, error_redirect, append_output, append_error, is_background);
