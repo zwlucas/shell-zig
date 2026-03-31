@@ -20,11 +20,9 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
     const pid = try std.posix.fork();
 
     if (pid == 0) {
-        _ = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
-            std.debug.print("execve failed: {any}\n", .{err});
-            std.posix.exit(1);
-        };
-        unreachable;
+        const err = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr));
+        std.debug.print("execve failed: {any}\n", .{err});
+        std.posix.exit(1);
     } else {
         if (!is_background) {
             _ = std.posix.waitpid(pid, 0);
@@ -100,11 +98,9 @@ pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path
             try std.posix.dup2(fd.handle, 2);
         }
 
-        _ = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
-            std.debug.print("execve failed: {any}\n", .{err});
-            std.posix.exit(1);
-        };
-        unreachable;
+        const err = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr));
+        std.debug.print("execve failed: {any}\n", .{err});
+        std.posix.exit(1);
     } else {
         if (!is_background) {
             _ = std.posix.waitpid(pid, 0);
@@ -184,12 +180,10 @@ pub fn runPipeline(
                 }
                 const path_z = try allocator.dupeZ(u8, s.path.?);
                 defer allocator.free(path_z);
-                _ = std.posix.execveZ(path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
-                    std.debug.print("execve failed in pipeline: {any}\n", .{err});
-                    std.posix.exit(1);
-                };
+                const err = std.posix.execveZ(path_z, argv_z, @ptrCast(std.os.environ.ptr));
+                std.debug.print("execve failed in pipeline: {any}\n", .{err});
+                std.posix.exit(1);
             }
-            unreachable;
         }
         pids[idx] = pid;
     }
