@@ -20,7 +20,8 @@ pub fn runExternalProgram(allocator: std.mem.Allocator, program_path: []const u8
     const pid = try std.posix.fork();
 
     if (pid == 0) {
-        _ = std.posix.execveZ(program_path_z, argv_z, std.c.environ) catch {
+        _ = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
+            std.debug.print("execve failed: {any}\n", .{err});
             std.posix.exit(1);
         };
         unreachable;
@@ -99,7 +100,8 @@ pub fn runExternalProgramWithRedirect(allocator: std.mem.Allocator, program_path
             try std.posix.dup2(fd.handle, 2);
         }
 
-        _ = std.posix.execveZ(program_path_z, argv_z, std.c.environ) catch {
+        _ = std.posix.execveZ(program_path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
+            std.debug.print("execve failed: {any}\n", .{err});
             std.posix.exit(1);
         };
         unreachable;
@@ -182,7 +184,10 @@ pub fn runPipeline(
                 }
                 const path_z = try allocator.dupeZ(u8, s.path.?);
                 defer allocator.free(path_z);
-                _ = std.posix.execveZ(path_z, argv_z, std.c.environ) catch std.posix.exit(1);
+                _ = std.posix.execveZ(path_z, argv_z, @ptrCast(std.os.environ.ptr)) catch |err| {
+                    std.debug.print("execve failed in pipeline: {any}\n", .{err});
+                    std.posix.exit(1);
+                };
             }
             unreachable;
         }

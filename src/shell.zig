@@ -163,6 +163,7 @@ pub fn executeCommand(
 
     if (try path.findInPath(allocator, cmd_name)) |program_path| {
         defer allocator.free(program_path);
+        // std.debug.print("Executing: {s} with args: {?s}\n", .{program_path, args});
 
         const argv = try parser.parseArgs(allocator, cmd_name, args);
         defer {
